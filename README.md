@@ -25,6 +25,8 @@ npm run tauri:dev          # spawns Vite + Tauri together
 
 On first run, the app sends you to **Settings → Adapters**. Add at least one adapter, then chat from the home view.
 
+> The agent sidecars and their native binaries are built for your machine automatically — `npm install` wires them up and `npm run tauri:build` bundles the right architecture. Per-OS/arch release installers are built in CI (push a `v*` tag). See [AGENTS.md](./AGENTS.md#sidecars-architecture--releases) for details.
+
 ### Adapter recipes
 
 **Anthropic with your Claude Code account** (uses your Pro/Team/Max plan, no API key needed):

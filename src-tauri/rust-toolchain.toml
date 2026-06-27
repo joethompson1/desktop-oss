@@ -1,0 +1,7 @@
+# Pin the Rust toolchain so every machine (and CI) builds with the same
+# compiler. rustup reads this automatically on any cargo invocation in
+# this directory and installs the version if missing.
+[toolchain]
+channel = "1.94.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

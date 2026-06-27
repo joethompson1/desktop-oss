@@ -75,6 +75,34 @@ The app's first launch redirects to `/settings` to configure at least
 one adapter. UI changes are picked up by Vite HMR live in the running
 window. Rust changes need a `tauri:dev` restart.
 
+## Sidecars, architecture & releases
+
+The two sidecars ship native, **per-arch** binaries. Never commit built
+artifacts: `node_modules/`, `dist/`, and `src-tauri/sidecar-dist/` are
+gitignored; each machine derives the right-arch binaries from lockfiles.
+
+- **Dev needs no Bun.** `tauri:dev` runs each sidecar as
+  `node sidecar/<name>/index.mjs` against the adjacent `node_modules`
+  (`resolve_*_runtime` in `src-tauri/src/lib.rs`). The root `postinstall`
+  runs `sidecar:install`, so one `npm install` sets everything up.
+- **Bundles are host-arch.** `beforeBundleCommand` runs
+  `sidecar/stage.mjs`, which builds each sidecar for the host and stages
+  the matching `${process.platform}-${process.arch}` SDK natives into
+  `src-tauri/sidecar-dist/`. `tauri.conf.json` has **no** arch literal —
+  the only arch logic is `stage.mjs` (Node) + `cursor_sdk_platform_tag`
+  (Rust), which always agree on the build host. So Apple Silicon → arm64
+  bundle, Intel → x64 bundle, automatically. Don't reintroduce a
+  hardcoded `darwin-arm64` anywhere.
+- **Releases** build one native runner per target via
+  `.github/workflows/release.yml` (`tauri-action`); push a `v*` tag.
+  Windows is pending a `.exe` tweak (see the workflow comment).
+- **Toolchain is pinned**: `.nvmrc`, `.bun-version`,
+  `src-tauri/rust-toolchain.toml`, `packageManager` in `package.json`.
+- **Local `tauri:build` DMG** can fail in a non-interactive shell
+  (`bundle_dmg.sh` drives Finder via AppleScript). Use
+  `CI=1 npm run tauri:build` or `tauri build --bundles app`; CI sets `CI`
+  so its DMGs build fine.
+
 ## Stack
 
 | Layer | Pinned |

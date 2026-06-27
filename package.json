@@ -4,7 +4,13 @@
   "description": "Open-source orchestrator-and-agents chat desktop app. Bring your own LLM (Anthropic account, API key, or local).",
   "type": "module",
   "license": "MIT",
+  "packageManager": "npm@11.4.2",
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
+  },
   "scripts": {
+    "postinstall": "npm run sidecar:install",
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
