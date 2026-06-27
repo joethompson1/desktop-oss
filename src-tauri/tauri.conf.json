@@ -7,7 +7,7 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
-    "beforeBundleCommand": "cd ../sidecar/claude-agent && bun run build && cd ../cursor-agent && bun run build",
+    "beforeBundleCommand": "node sidecar/stage.mjs",
     "frontendDist": "../build"
   },
   "app": {
@@ -36,12 +36,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../sidecar/claude-agent/dist/claude-agent-sidecar": "claude-agent-bin/claude-agent-sidecar",
-      "../sidecar/claude-agent/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude": "claude-agent-bin/claude",
-      "../sidecar/cursor-agent/dist/cursor-agent-sidecar": "cursor-agent-bin/cursor-agent-sidecar",
-      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/package.json": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/package.json",
-      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/bin/cursorsandbox": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/bin/cursorsandbox",
-      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/bin/rg": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/bin/rg"
+      "sidecar-dist/claude-agent-bin/": "claude-agent-bin/",
+      "sidecar-dist/cursor-agent-bin/": "cursor-agent-bin/"
     }
   },
   "plugins": {

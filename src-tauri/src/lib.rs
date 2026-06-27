@@ -1017,6 +1017,23 @@ fn resolve_claude_agent_runtime(
     }
 }
 
+/// npm-style platform tag (`<platform>-<arch>`, e.g. `darwin-x64`) naming
+/// the `@cursor/sdk-<tag>` package. This matches `${process.platform}-${process.arch}`
+/// in Node — which is exactly how `@cursor/sdk` builds the package name it
+/// `require.resolve`s at runtime — so deriving it from the compile target
+/// here keeps the Rust resolver and the bundled package name in sync.
+/// `None` for targets that have no `@cursor/sdk-*` optional dependency.
+fn cursor_sdk_platform_tag() -> Option<&'static str> {
+    Some(match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "darwin-arm64",
+        ("macos", "x86_64") => "darwin-x64",
+        ("linux", "aarch64") => "linux-arm64",
+        ("linux", "x86_64") => "linux-x64",
+        ("windows", "x86_64") => "win32-x64",
+        _ => return None,
+    })
+}
+
 /// Runtime info for invoking the Cursor SDK sidecar. Same shape and dev/prod
 /// split as `ClaudeAgentRuntime` — in dev we run the .mjs via `node`, in
 /// prod we run the Bun-compiled standalone binary. The `native_bin_dir`
@@ -1073,10 +1090,21 @@ fn resolve_cursor_agent_runtime(
                 tauri::path::BaseDirectory::Resource,
             )
             .map_err(|e| format!("sidecar binary resolve failed: {e}"))?;
+        // The bundle ships exactly the `@cursor/sdk-<tag>` package matching
+        // the machine it was built on (see sidecar/stage.mjs). Derive the
+        // same tag from the compile target so this resolves to the package
+        // the SDK's runtime `require.resolve("@cursor/sdk-<tag>")` expects.
+        let tag = cursor_sdk_platform_tag().ok_or_else(|| {
+            format!(
+                "no bundled @cursor/sdk for target {}-{}",
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+            )
+        })?;
         let bin_dir = app
             .path()
             .resolve(
-                "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/bin",
+                format!("cursor-agent-bin/node_modules/@cursor/sdk-{tag}/bin"),
                 tauri::path::BaseDirectory::Resource,
             )
             .map_err(|e| format!("native bin dir resolve failed: {e}"))?;

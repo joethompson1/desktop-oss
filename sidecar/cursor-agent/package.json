@@ -5,7 +5,7 @@
   "description": "Thin sidecar that calls @cursor/sdk's Agent.send() and relays InteractionUpdate + SDKMessage events as NDJSON to stdout",
   "main": "index.mjs",
   "scripts": {
-    "build": "bun build ./index.mjs --compile --target=bun-darwin-arm64 --outfile=./dist/cursor-agent-sidecar",
+    "build": "bun build ./index.mjs --compile --outfile=./dist/cursor-agent-sidecar",
     "build:darwin-arm64": "bun build ./index.mjs --compile --target=bun-darwin-arm64 --outfile=./dist/cursor-agent-sidecar-darwin-arm64",
     "build:darwin-x64": "bun build ./index.mjs --compile --target=bun-darwin-x64 --outfile=./dist/cursor-agent-sidecar-darwin-x64",
     "build:linux-x64": "bun build ./index.mjs --compile --target=bun-linux-x64 --outfile=./dist/cursor-agent-sidecar-linux-x64",
