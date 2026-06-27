@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "clive-desktop-oss",
+  "version": "0.1.0",
+  "identifier": "io.github.clive-oss",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "cd ../sidecar/claude-agent && bun run build && cd ../cursor-agent && bun run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Clive",
+        "width": 1200,
+        "height": 800,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 28 }
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../sidecar/claude-agent/dist/claude-agent-sidecar": "claude-agent-bin/claude-agent-sidecar",
+      "../sidecar/claude-agent/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude": "claude-agent-bin/claude",
+      "../sidecar/cursor-agent/dist/cursor-agent-sidecar": "cursor-agent-bin/cursor-agent-sidecar",
+      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/package.json": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/package.json",
+      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/bin/cursorsandbox": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/bin/cursorsandbox",
+      "../sidecar/cursor-agent/node_modules/@cursor/sdk-darwin-arm64/bin/rg": "cursor-agent-bin/node_modules/@cursor/sdk-darwin-arm64/bin/rg"
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:clive-oss.db"]
+    }
+  }
+}

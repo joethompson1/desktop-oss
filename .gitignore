@@ -1,0 +1,25 @@
+# Node
+node_modules/
+.svelte-kit/
+build/
+dist/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Eval snapshots — contain real conversations, never commit
+src/lib/agent/evals/fixtures/snapshots/*.ts
+
+# Logs
+*.log
+npm-debug.log*

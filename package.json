@@ -1,0 +1,53 @@
+{
+  "name": "clive-desktop-oss",
+  "version": "0.1.0",
+  "description": "Open-source orchestrator-and-agents chat desktop app. Bring your own LLM (Anthropic account, API key, or local).",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "sidecar:install": "cd sidecar/claude-agent && npm install && cd ../cursor-agent && npm install",
+    "sidecar:build": "cd sidecar/claude-agent && bun run build && cd ../cursor-agent && bun run build",
+    "evals": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit src/lib/agent/evals/scenarios/**/*.eval.ts",
+    "evals:one": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit",
+    "capture-eval-snapshot": "tsx --experimental-sqlite src/lib/agent/evals/snapshot/cli.ts",
+    "test:unit": "tsx --test --test-force-exit src/lib/agent/**/*.test.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.77",
+    "@ai-sdk/openai": "^3.0.63",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-http": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-shell": "^2",
+    "@tauri-apps/plugin-sql": "^2",
+    "@tauri-apps/plugin-store": "^2",
+    "ai": "^6.0.182",
+    "dompurify": "^3.4.2",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.3",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.30.0",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^25.9.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "tsx": "^4.22.2",
+    "typescript": "~5.6.2",
+    "vite": "^8.0.0"
+  }
+}
