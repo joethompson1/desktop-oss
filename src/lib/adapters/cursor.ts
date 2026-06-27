@@ -1,7 +1,7 @@
 // Cursor adapter — runs the official `@cursor/sdk` in a bundled
 // Node/Bun sidecar and surfaces its event stream as a delegate.
 //
-// Implementation choice (per "Adapter conventions" in AGENTS.md): the
+// Implementation choice (per "Adapter conventions" in CLAUDE.md): the
 // SDK transport is preferred over wrapping the `cursor-agent` CLI
 // binary. Calling `Agent.create()` / `agent.send()` directly:
 //   - skips the ~40s cold-start tax that `cursor-agent -p` pays on

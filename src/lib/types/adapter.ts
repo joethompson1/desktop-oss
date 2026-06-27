@@ -11,7 +11,7 @@ import type { ChatStreamPart } from "./chat";
 /** Brand-level adapter identity. The internal type ID is intentionally
  *  brand-only (no `-sdk` / `-cli` suffixes) — each brand maps to a
  *  single canonical implementation strategy. See "Adapter conventions"
- *  in AGENTS.md. */
+ *  in CLAUDE.md. */
 export type AdapterType =
   | "anthropic"
   | "openai-compatible"

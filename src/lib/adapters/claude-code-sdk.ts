@@ -1,7 +1,7 @@
 // Claude Code adapter — runs the official `@anthropic-ai/claude-agent-sdk`
 // in a bundled Node/Bun sidecar and surfaces its event stream as a delegate.
 //
-// Implementation choice (per "Adapter conventions" in AGENTS.md): the SDK
+// Implementation choice (per "Adapter conventions" in CLAUDE.md): the SDK
 // transport is preferred over wrapping the `claude` CLI binary. Calling
 // query() directly gives us typed `SDKMessage` events, graceful
 // cancellation, and first-class permission gating via `canUseTool` —
