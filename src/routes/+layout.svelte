@@ -81,7 +81,6 @@
 
     <main
       class:has-pinned-sidebar={!ui.sidebarCollapsed}
-      class:has-right-rail={dockActive}
       class:has-right-panel={panelOpen}
     >
       {#if !onCockpitRoute}
@@ -131,15 +130,10 @@
   main.has-pinned-sidebar {
     padding-left: 260px;
   }
-  /* Reserve space for the right dock so content never sits under it. The
-     -panel rule must follow the -rail rule so it wins when both apply. */
-  main.has-right-rail {
-    padding-right: calc(var(--right-rail-width) + 16px);
-  }
+  /* Reserve space only for an open panel; the icon rail is a top overlay
+     and needs no horizontal reservation. */
   main.has-right-panel {
-    padding-right: calc(
-      var(--right-rail-width) + var(--right-panel-width) + 24px
-    );
+    padding-right: calc(var(--right-panel-width) + 16px);
   }
   .content {
     flex: 1 1 auto;

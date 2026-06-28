@@ -1,11 +1,9 @@
 <script lang="ts">
-  // Right-hand dock for module panels. A thin rail of icons (one per enabled
-  // panel module) plus, when one is open, the panel card to its left. Both
-  // float as cards mirroring the left Sidebar's style. Renders nothing when
-  // there are no panel modules, so the app is unchanged until a module exists.
-  //
-  // The left sidebar (conversation history) is a separate component and is NOT
-  // part of this dock.
+  // Right-dock for module panels. A horizontal row of standalone icon buttons
+  // in the top-right title-bar band (one per enabled panel module); clicking
+  // one toggles its panel, which docks on the right below the top bar. Renders
+  // nothing when there are no panel modules. The left sidebar (conversation
+  // history) is a separate component and not part of this dock.
 
   import { ui } from "$lib/stores/ui.svelte";
   import { modules } from "$lib/modules/store.svelte";
@@ -32,6 +30,22 @@
 </script>
 
 {#if active && panelModules.length > 0}
+  <nav class="dock-rail" class:panel-open={!!openModule} aria-label="Panels">
+    {#each panelModules as m (m.id)}
+      <button
+        type="button"
+        class="dock-rail-btn"
+        class:active={ui.openPanelId === m.id}
+        onclick={() => ui.togglePanel(m.id)}
+        title={m.label}
+        aria-label={m.label}
+        aria-pressed={ui.openPanelId === m.id}
+      >
+        {m.icon ?? m.label.slice(0, 1).toUpperCase()}
+      </button>
+    {/each}
+  </nav>
+
   {#if openModule}
     {@const PanelComponent = openModule.panel?.component}
     <section class="dock-panel" aria-label={openModule.label}>
@@ -69,56 +83,46 @@
       </div>
     </section>
   {/if}
-
-  <nav class="dock-rail" aria-label="Panels">
-    {#each panelModules as m (m.id)}
-      <button
-        type="button"
-        class="dock-rail-btn"
-        class:active={ui.openPanelId === m.id}
-        onclick={() => ui.togglePanel(m.id)}
-        title={m.label}
-        aria-label={m.label}
-        aria-pressed={ui.openPanelId === m.id}
-      >
-        {m.icon ?? m.label.slice(0, 1).toUpperCase()}
-      </button>
-    {/each}
-  </nav>
 {/if}
 
 <style>
+  /* Horizontal row of standalone icon buttons in the top-right title-bar
+     band — no enclosing card, single row, no wrapping. */
   .dock-rail {
     position: absolute;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: var(--right-rail-width);
+    top: 10px;
+    right: 12px;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 4px;
-    padding: 8px 0;
-    background: var(--bg-sidebar);
-    border-radius: 10px;
-    box-shadow: var(--surface-shadow), var(--surface-ring);
-    z-index: 50;
+    gap: 2px;
+    z-index: 60;
+    -webkit-app-region: no-drag;
+    transition: right 0.18s cubic-bezier(0.2, 0, 0.2, 1);
+  }
+  /* With a panel open, the icons sit just to its LEFT on the top-bar line
+     (not above it); closed, they rest in the top-right corner. */
+  .dock-rail.panel-open {
+    right: calc(var(--right-panel-width) + 16px);
   }
   .dock-rail-btn {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
     border: 0;
     border-radius: 7px;
     background: transparent;
     color: var(--text-muted);
     font-family: inherit;
-    font-size: 0.95em;
-    font-weight: 600;
+    font-size: 1em;
+    line-height: 1;
     cursor: pointer;
+    -webkit-app-region: no-drag;
     transition:
       background 0.1s linear,
       color 0.1s linear;
@@ -131,10 +135,13 @@
     background: var(--active-bg);
     color: var(--text);
   }
+
+  /* The expanded panel docks full-height on the right; the icon row sits to
+     its left on the top-bar line. */
   .dock-panel {
     position: absolute;
     top: 8px;
-    right: calc(var(--right-rail-width) + 16px);
+    right: 8px;
     bottom: 8px;
     width: var(--right-panel-width);
     display: flex;

@@ -341,13 +341,15 @@ fn parse_credentials_blob(raw: &str) -> Option<ClaudeCodeAccountInfo> {
     })
 }
 
-/// macOS: shell out to `/usr/bin/security find-generic-password` against the
-/// `Claude Code-credentials` service. Matches what
-/// `@anthropic-ai/claude-agent-sdk` does on darwin — keychain is the
-/// authoritative store, the `~/.claude/.credentials.json` path is Linux-only.
+/// macOS: shell out to `/usr/bin/security find-generic-password`. Claude
+/// Code stores its OAuth tokens in the login keychain, but the service name
+/// has varied across versions — current CLIs use `Claude Code`, older ones
+/// (and some SDK builds) use `Claude Code-credentials` — so we try each.
+/// Keychain is the authoritative store on darwin; `~/.claude/.credentials.json`
+/// is the Linux/WSL fallback.
 #[cfg(target_os = "macos")]
 fn read_macos_keychain() -> Option<ClaudeCodeAccountInfo> {
-    let raw = read_macos_keychain_raw()?;
+    let (_service, raw) = read_macos_keychain_raw()?;
     parse_credentials_blob(&raw)
 }
 
@@ -478,10 +480,10 @@ fn persist_refreshed_credentials(
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        if let Some(raw) = read_macos_keychain_raw() {
+        if let Some((service, raw)) = read_macos_keychain_raw() {
             let updated = mutate_credentials_blob(&raw, access_token, refresh_token, expires_at_ms)
                 .ok_or_else(|| "keychain blob is not parseable JSON".to_string())?;
-            return write_macos_keychain(&updated);
+            return write_macos_keychain(&service, &updated);
         }
     }
 
@@ -553,27 +555,43 @@ fn mutate_credentials_blob(
     serde_json::to_string(&value).ok()
 }
 
-/// Raw keychain blob fetch — same shell-out as `read_macos_keychain` but
-/// returns the unparsed JSON so the refresh path can mutate-and-write
-/// without losing fields we don't model.
+/// Keychain service names Claude Code has used for its credential item,
+/// newest first. We read whichever exists and (on refresh) write the
+/// rotated tokens back to that same service.
 #[cfg(target_os = "macos")]
-fn read_macos_keychain_raw() -> Option<String> {
+const CLAUDE_KEYCHAIN_SERVICES: [&str; 2] = ["Claude Code", "Claude Code-credentials"];
+
+/// Raw keychain blob fetch — same shell-out as `read_macos_keychain` but
+/// returns `(service, unparsed JSON)` so the refresh path can write back to
+/// the service the blob actually came from without losing fields we don't model.
+#[cfg(target_os = "macos")]
+fn read_macos_keychain_raw() -> Option<(String, String)> {
     let account = macos_keychain_account();
-    let output = std::process::Command::new("/usr/bin/security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "Claude Code-credentials",
-            "-a",
-            account.as_str(),
-            "-w",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+    for service in CLAUDE_KEYCHAIN_SERVICES {
+        let output = match std::process::Command::new("/usr/bin/security")
+            .args([
+                "find-generic-password",
+                "-s",
+                service,
+                "-a",
+                account.as_str(),
+                "-w",
+            ])
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
+            continue;
+        }
+        if let Ok(blob) = String::from_utf8(output.stdout) {
+            if !blob.trim().is_empty() {
+                return Some((service.to_string(), blob));
+            }
+        }
     }
-    String::from_utf8(output.stdout).ok()
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -606,14 +624,14 @@ fn macos_keychain_account() -> String {
 /// may see a keychain access prompt — same one they already accepted
 /// for reads, but writes are a separate ACL gate.
 #[cfg(target_os = "macos")]
-fn write_macos_keychain(blob: &str) -> Result<(), String> {
+fn write_macos_keychain(service: &str, blob: &str) -> Result<(), String> {
     let account = macos_keychain_account();
     let output = std::process::Command::new("/usr/bin/security")
         .args([
             "add-generic-password",
             "-U",
             "-s",
-            "Claude Code-credentials",
+            service,
             "-a",
             account.as_str(),
             "-w",
