@@ -316,7 +316,7 @@
 </div>
 
 <style>
-  /* Layout matches clive-desktop's cockpit ToolEntry exactly: no border,
+  /* Layout matches desktop-oss's cockpit ToolEntry exactly: no border,
    * no background, no card. The tool entry is just inline text that
    * expands into a column when toggled. */
   .tool-entry {

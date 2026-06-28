@@ -2,7 +2,7 @@
 // Ordered mode checks subsequence (the expected names appear in order,
 // extras allowed). Unordered mode checks set membership.
 //
-// Ported from Clive backend's
+// Ported from the upstream backend's
 // `apps/backend/src/agent/evals/scorers/tool-call-sequence.ts`.
 
 import type { AgentTurnOutput, AgentTurnExpected, Scorer } from "../types.js";

@@ -139,7 +139,7 @@ export class McpStdioClient {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
         clientInfo: {
-          name: this.#opts.clientName ?? "clive-desktop-oss",
+          name: this.#opts.clientName ?? "desktop-oss",
           version: this.#opts.clientVersion ?? "0.1",
         },
       })) as {

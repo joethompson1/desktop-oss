@@ -1,6 +1,6 @@
 /**
  * Produce a "verb / detail" pair for a tool call, used as the collapsed
- * header text. Ported from clive-desktop's cockpit and extended with the
+ * header text. Ported from desktop-oss's cockpit and extended with the
  * orchestrator-tool names this app surfaces (delegate_task, remember,
  * recall, list_files, list_runs).
  */

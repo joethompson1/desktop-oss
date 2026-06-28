@@ -36,6 +36,7 @@ import {
 } from "./prompt-cache";
 import { getOrchestratorTools } from "./tools";
 import { loadOrchestratorPrompt } from "./prompts";
+import { getModuleContributions } from "$lib/modules/integration";
 
 const MAX_STEPS = 50;
 const HISTORY_LIMIT = 100;
@@ -192,22 +193,40 @@ export async function* streamOrchestratorTurn(
   input: OrchestratorTurnInput,
 ): AsyncIterable<ChatStreamPart> {
   const history = await loadMessages(input.conversationId, HISTORY_LIMIT);
-  const [baseSystemPrompt, environment, activeRoster] = await Promise.all([
-    loadOrchestratorPrompt(),
-    buildEnvironment(input.workingDirectory),
-    buildActiveRoster(input.conversationId),
-  ]);
+  const moduleCtx = {
+    conversationId: input.conversationId,
+    workingDirectory: input.workingDirectory,
+    signal: input.signal,
+  };
+  const [baseSystemPrompt, environment, activeRoster, moduleContributions] =
+    await Promise.all([
+      loadOrchestratorPrompt(),
+      buildEnvironment(input.workingDirectory),
+      buildActiveRoster(input.conversationId),
+      getModuleContributions(moduleCtx),
+    ]);
   const delegateRoster = buildDelegateRoster(input.delegateRosterConfigs);
-  const systemPrompt = [baseSystemPrompt, environment, delegateRoster, activeRoster]
+  const systemPrompt = [
+    baseSystemPrompt,
+    environment,
+    delegateRoster,
+    activeRoster,
+    ...moduleContributions.promptFragments,
+  ]
     .filter(Boolean)
     .join("\n\n");
 
-  const { essential, connector } = getOrchestratorTools({
+  const orchestratorTools = getOrchestratorTools({
     resolveDelegateAdapter: input.resolveDelegateAdapter,
     conversationId: input.conversationId,
     workingDirectory: input.workingDirectory,
     signal: input.signal,
   });
+  const essential = {
+    ...orchestratorTools.essential,
+    ...moduleContributions.tools,
+  };
+  const connector = orchestratorTools.connector;
 
   const messages = historyToModelMessages(history);
   messages.push({ role: "user", content: input.userMessage });
@@ -251,7 +270,7 @@ export async function* streamOrchestratorTurn(
   //
   //   1. System prompt:  pass as a SystemModelMessage with cacheControl
   //                      (the streamText `system: string` form has no hook
-  //                      to attach providerOptions — clive does the same).
+  //                      to attach providerOptions — the upstream app does the same).
   //   2. Last tool:      stamp the final function tool — Anthropic caches
   //                      everything up to that marker as one prefix.
   //   3. Last assistant: stamp the most recent assistant turn in history —

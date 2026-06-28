@@ -5,7 +5,7 @@
 //
 // At the *runtime* layer we consume SDK `TextStreamPart` events directly
 // (re-exported as `ChatStreamPart` below). The chat-store reducer maps
-// those into `UIMessagePart` updates. This split mirrors clive backend's
+// those into `UIMessagePart` updates. This split mirrors the upstream backend's
 // shared-types layout: runtime in SDK shapes, render in our own types.
 
 import type { TextStreamPart, ToolSet } from "ai";

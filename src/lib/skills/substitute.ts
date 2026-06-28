@@ -14,10 +14,10 @@ export interface SubstitutionContext {
    *  available via $0, $1, $ARGUMENTS. */
   argumentNames: string[];
   /** Absolute path to the skill's directory — substituted into
-   *  `${CLAUDE_SKILL_DIR}` and `${CLIVE_SKILL_DIR}`. */
+   *  `${CLAUDE_SKILL_DIR}` and `${DESKTOP_OSS_SKILL_DIR}`. */
   skillDir: string;
   /** Current conversation id — substituted into
-   *  `${CLAUDE_SESSION_ID}` and `${CLIVE_SESSION_ID}`. */
+   *  `${CLAUDE_SESSION_ID}` and `${DESKTOP_OSS_SESSION_ID}`. */
   sessionId: string;
 }
 
@@ -27,7 +27,7 @@ export interface SubstitutionContext {
  *    2. Indexed $ARGUMENTS[N]
  *    3. Shorthand $0, $1, $2 ...
  *    4. Full $ARGUMENTS
- *    5. Specials ${CLAUDE_SKILL_DIR}, ${CLAUDE_SESSION_ID} (+ Clive aliases)
+ *    5. Specials ${CLAUDE_SKILL_DIR}, ${CLAUDE_SESSION_ID} (+ legacy aliases)
  *    6. No-placeholder fallback — if nothing changed and args were
  *       supplied, append `ARGUMENTS: <args>` to the body.
  *
@@ -58,8 +58,8 @@ export function substituteVariables(body: string, ctx: SubstitutionContext): str
   out = out
     .replaceAll("${CLAUDE_SKILL_DIR}", ctx.skillDir)
     .replaceAll("${CLAUDE_SESSION_ID}", ctx.sessionId)
-    .replaceAll("${CLIVE_SKILL_DIR}", ctx.skillDir)
-    .replaceAll("${CLIVE_SESSION_ID}", ctx.sessionId);
+    .replaceAll("${DESKTOP_OSS_SKILL_DIR}", ctx.skillDir)
+    .replaceAll("${DESKTOP_OSS_SESSION_ID}", ctx.sessionId);
 
   // 6. No-placeholder fallback
   const argsChangedSomething = out !== original;

@@ -142,7 +142,7 @@ export class CodexAdapter implements LLMAdapter {
     const client = new McpStdioClient({
       binary: "codex",
       args: ["mcp-server"],
-      clientName: "clive-desktop-oss",
+      clientName: "desktop-oss",
       clientVersion: APP_VERSION,
     });
     await client.start();

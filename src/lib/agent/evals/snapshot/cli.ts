@@ -8,7 +8,7 @@
 //     --out my-repro
 //
 // Defaults:
-//   --db                 Tauri default for io.github.clive-oss
+//   --db                 Tauri default for io.github.desktop-oss
 //   --conversation-id    orchestrator-main (the singleton)
 //   --limit              200
 //   --before             (none — captures every message)

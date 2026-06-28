@@ -2,7 +2,7 @@
 // tauri-plugin-sql; opening the database here applies any pending ones.
 import Database from "@tauri-apps/plugin-sql";
 
-const DB_URL = "sqlite:clive-oss.db";
+const DB_URL = "sqlite:desktop-oss.db";
 
 let dbPromise: Promise<Database> | null = null;
 

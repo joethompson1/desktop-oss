@@ -2,7 +2,7 @@
 // per scenario; inside, iterates the (row × iteration) matrix and reports
 // scorer failures with structured detail.
 //
-// Modelled on Clive backend's `apps/backend/src/agent/evals/runner.ts`.
+// Modelled on the upstream backend's `apps/backend/src/agent/evals/runner.ts`.
 
 import { describe, it } from "node:test";
 

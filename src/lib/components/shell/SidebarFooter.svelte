@@ -17,7 +17,7 @@
     await goto("/settings");
   }
 
-  async function handleBackToClive() {
+  async function handleBackHome() {
     closeMenu();
     await goto("/");
   }
@@ -38,8 +38,8 @@
       toggleMenu();
     }}
   >
-    <span class="avatar" aria-hidden="true">C</span>
-    <span class="label">Clive (OSS)</span>
+    <span class="avatar" aria-hidden="true">D</span>
+    <span class="label">Desktop OSS</span>
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
@@ -47,8 +47,8 @@
   {#if menuOpen}
     <div class="menu" role="menu">
       {#if onSettingsRoute}
-        <button type="button" role="menuitem" onclick={handleBackToClive}>
-          ← Back to Clive
+        <button type="button" role="menuitem" onclick={handleBackHome}>
+          ← Back to chat
         </button>
       {:else}
         <button type="button" role="menuitem" onclick={handleSettings}>

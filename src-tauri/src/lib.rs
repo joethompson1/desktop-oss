@@ -160,7 +160,7 @@ fn run_in(dir: &str, program: &str, args: &[&str]) -> Option<(bool, String, Stri
 }
 
 /// Compute the git + GitHub status of a working directory by shelling out
-/// to `git` and `gh`. Local-first equivalent of clive's webhook-driven PR
+/// to `git` and `gh`. Local-first equivalent of a webhook-driven PR
 /// state. Always returns a value; failures are represented in the fields
 /// (`is_repo`, `gh_available`, `error`) rather than thrown.
 #[tauri::command]
@@ -417,7 +417,7 @@ async fn refresh_claude_code_credentials(
     }
 
     let client = reqwest::Client::builder()
-        .user_agent(format!("clive-desktop-oss/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("desktop-oss/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("OAuth refresh client build failed: {e}"))?;
 
@@ -695,7 +695,7 @@ async fn http_stream(
     );
 
     let client = reqwest::Client::builder()
-        .user_agent(format!("clive-desktop-oss/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("desktop-oss/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| {
             let msg = format!("client build failed: {e}");
@@ -1159,7 +1159,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
-                .add_migrations("sqlite:clive-oss.db", migrations())
+                .add_migrations("sqlite:desktop-oss.db", migrations())
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![

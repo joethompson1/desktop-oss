@@ -52,7 +52,7 @@ pub enum SkillFileKind {
     /// Claude commands.
     Flat,
     /// `<root>/<name>/SKILL.md` — Claude skills, Cursor skills-cursor,
-    /// Clive local skills.
+    /// Local skills.
     Nested,
 }
 

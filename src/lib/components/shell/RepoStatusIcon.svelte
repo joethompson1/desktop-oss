@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Per-session git/GitHub status glyph. Ported from clive-desktop's
+  // Per-session git/GitHub status glyph. Ported from desktop-oss's
   // JobStatusIcon (same SVGs/colors/pulse). Variant precedence: PR state
   // (merged → closed → open) over the session's run activity.
   import type { PrInfo } from "$lib/stores/repo-status.svelte";

@@ -1,5 +1,5 @@
 {
-  "name": "clive-desktop-oss",
+  "name": "desktop-oss",
   "version": "0.1.0",
   "description": "Open-source orchestrator-and-agents chat desktop app. Bring your own LLM (Anthropic account, API key, or local).",
   "type": "module",

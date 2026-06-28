@@ -62,7 +62,7 @@
     ) => Promise<void>;
     /** Overrides the sending/disabled flag. Default: `store.sending`. */
     sending?: boolean;
-    /** Placeholder text inside the textarea. Default: "Talk to Clive…". */
+    /** Placeholder text inside the textarea. Default: "Send a message…". */
     placeholder?: string;
     /** When false, hides the attach button (e.g. delegate runs don't take
      *  attachments yet). Default: true. */
@@ -82,7 +82,7 @@
     onChangeDirectory,
     onSend,
     sending,
-    placeholder = "Talk to Clive…",
+    placeholder = "Send a message…",
     allowAttachments = true,
     sourceFilter = null,
   }: Props = $props();

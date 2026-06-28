@@ -8,6 +8,7 @@ import { health } from "$lib/stores/health.svelte";
 import { hydratePermissions } from "$lib/stores/skill-permissions.svelte";
 import { hydrate as hydrateSkills } from "$lib/stores/skills.svelte";
 import { ui } from "$lib/stores/ui.svelte";
+import { modules } from "$lib/modules/store.svelte";
 
 export const ssr = false;
 export const prerender = false;
@@ -22,6 +23,7 @@ export const load = async () => {
     void conversations.hydrate();
     void hydrateSkills();
     void hydratePermissions();
+    void modules.hydrate();
   }
   return {};
 };

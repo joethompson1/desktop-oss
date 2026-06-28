@@ -77,7 +77,7 @@ export async function buildAnthropicLanguageModel(
     headers["x-app"] = "cli";
     headers["User-Agent"] = CLAUDE_CLI_USER_AGENT;
     headers["X-Claude-Code-Session-Id"] = SESSION_ID;
-    headers["x-client-app"] = "clive-desktop-oss";
+    headers["x-client-app"] = "desktop-oss";
 
     betas.push(CLAUDE_CODE_BETA, OAUTH_BETA);
   } else {

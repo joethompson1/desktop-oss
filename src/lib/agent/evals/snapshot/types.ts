@@ -43,7 +43,7 @@ export interface RecordedDelegateResponse {
 
 export interface CaptureOptions {
   /** Override the SQLite file path. Defaults to the Tauri-managed location
-   *  for `io.github.clive-oss`. */
+   *  for `io.github.desktop-oss`. */
   dbPath?: string;
   /** Which conversation to capture. Defaults to the singleton
    *  orchestrator conversation. */

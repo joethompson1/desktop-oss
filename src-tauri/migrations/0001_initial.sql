@@ -1,4 +1,4 @@
--- Initial schema for clive-desktop-oss local store.
+-- Initial schema for desktop-oss local store.
 -- Conversations = orchestrator threads (typically one long-running thread).
 -- Messages = the orchestrator's wire-shape UIChatTurn rows.
 -- Runs = delegate sub-agent invocations, owned by a conversation.

@@ -102,7 +102,7 @@ export const PHASE_1_FIXTURES: Skill[] = [
     id: "local:interface-first",
     name: "interface-first",
     source: "local",
-    origin: "~/.clive/skills/interface-first/SKILL.md",
+    origin: "~/.desktop-oss/skills/interface-first/SKILL.md",
     description:
       "Design the interface and write tests against it before any implementation — enforces TDD with an explicit contract approval gate",
     arguments: [],
@@ -133,7 +133,7 @@ export const PHASE_1_FIXTURES: Skill[] = [
     id: "local:grill-me",
     name: "grill-me",
     source: "local",
-    origin: "~/.clive/skills/grill-me/SKILL.md",
+    origin: "~/.desktop-oss/skills/grill-me/SKILL.md",
     description:
       "Interview me relentlessly about every aspect of a plan until shared understanding",
     arguments: [],

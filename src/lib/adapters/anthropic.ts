@@ -309,7 +309,7 @@ export class AnthropicAdapter implements LLMAdapter {
       headers["x-app"] = "cli";
       headers["User-Agent"] = CLAUDE_CLI_USER_AGENT;
       headers["X-Claude-Code-Session-Id"] = SESSION_ID;
-      headers["x-client-app"] = "clive-desktop-oss";
+      headers["x-client-app"] = "desktop-oss";
 
       // Beta header order matches `claude-code/src/utils/betas.ts`:
       // claude-code beta first, then oauth, then optional 1m-context.

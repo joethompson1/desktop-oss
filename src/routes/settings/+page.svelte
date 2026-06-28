@@ -414,7 +414,7 @@
   {#if tab === "adapters"}
     <section class="panel">
       <p class="intro">
-        Configure how Clive talks to language models. The
+        Configure how the app talks to language models. The
         <strong>orchestrator</strong>
         is who you chat with. <strong>Every other adapter</strong> is
         automatically available as a delegate the orchestrator can call
@@ -783,7 +783,7 @@
         Choose which on-disk skill sources show up in the
         <code>/</code>
         menu. Toggling a source on/off rescans immediately. Local skills
-        live under <code>~/.clive/skills/</code>; the other sources point
+        live under <code>~/.desktop-oss/skills/</code>; the other sources point
         at the standard directories used by Claude Code, Cursor, and
         Codex.
       </p>
@@ -852,7 +852,7 @@
     </section>
   {:else if tab === "about"}
     <section class="panel about">
-      <h3>Clive Desktop OSS</h3>
+      <h3>Desktop OSS</h3>
       <p>
         Open-source orchestrator-and-agents chat desktop app. Local-first,
         bring your own LLM.

@@ -18,8 +18,28 @@ class UiStore {
   #isFullscreen = $state<boolean>(false);
   #fullscreenUnlisten: (() => void) | null = null;
 
+  // Which right-dock module panel is currently expanded (by module id), or
+  // null when the dock shows only its rail. Tabbed: one panel open at a time.
+  #openPanelId = $state<string | null>(null);
+
   get sidebarCollapsed(): boolean {
     return this.#sidebarCollapsed;
+  }
+
+  get openPanelId(): string | null {
+    return this.#openPanelId;
+  }
+
+  openPanel(id: string): void {
+    this.#openPanelId = id;
+  }
+
+  closePanel(): void {
+    this.#openPanelId = null;
+  }
+
+  togglePanel(id: string): void {
+    this.#openPanelId = this.#openPanelId === id ? null : id;
   }
 
   get hydrated(): boolean {

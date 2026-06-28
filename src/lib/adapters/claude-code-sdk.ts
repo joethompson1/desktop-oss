@@ -435,7 +435,7 @@ export class ClaudeCodeSDKAdapter implements LLMAdapter {
     };
 
     const env: Record<string, string> = {
-      CLAUDE_AGENT_SDK_CLIENT_APP: "clive-desktop-oss",
+      CLAUDE_AGENT_SDK_CLIENT_APP: "desktop-oss",
     };
     if (runtime.claudeBinaryPath) {
       env.CLAUDE_AGENT_SDK_EXECUTABLE_PATH = runtime.claudeBinaryPath;

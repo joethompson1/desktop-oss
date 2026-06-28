@@ -23,7 +23,7 @@ export const CONTEXT_1M_BETA = "context-1m-2025-08-07";
 // literal string "external" in that slot — mirror exactly.
 export const CLAUDE_CLI_VERSION = "2.1.138";
 export const CLAUDE_CLI_USER_AGENT =
-  `claude-cli/${CLAUDE_CLI_VERSION} (external, cli, client-app/clive-desktop-oss/0.1.0)`;
+  `claude-cli/${CLAUDE_CLI_VERSION} (external, cli, client-app/desktop-oss/0.1.0)`;
 
 // Stable per-app-session UUID matching what the CLI's
 // `X-Claude-Code-Session-Id` header sends. Generated once at module load —

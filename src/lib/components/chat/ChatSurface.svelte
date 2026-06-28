@@ -265,7 +265,7 @@
       sending={chat.sending}
       onSend={(text, attachments, skillContext) =>
         chat.send(text, attachments, skillContext)}
-      placeholder={composerPlaceholder ?? "Talk to Clive…"}
+      placeholder={composerPlaceholder ?? "Send a message…"}
       allowAttachments={allowAttachments}
       sourceFilter={sourceFilter}
     />

@@ -140,7 +140,7 @@ export async function ensureDefaultSession(): Promise<string> {
     "SELECT id FROM conversations ORDER BY updated_at DESC LIMIT 1",
   );
   if (rows[0]) return rows[0].id;
-  return createConversation({ title: "Chat with Clive", workingDirectory: home });
+  return createConversation({ title: "Orchestrator", workingDirectory: home });
 }
 
 /** Legacy fallback id for delegate runs spawned without an explicit
@@ -163,7 +163,7 @@ export async function ensureOrchestratorConversation(): Promise<string> {
     const now = Date.now();
     await db.execute(
       "INSERT INTO conversations (id, title, created_at, updated_at, archived) VALUES ($1, $2, $3, $4, 0)",
-      [ORCHESTRATOR_CONVERSATION_ID, "Chat with Clive", now, now],
+      [ORCHESTRATOR_CONVERSATION_ID, "Orchestrator", now, now],
     );
   }
   return ORCHESTRATOR_CONVERSATION_ID;

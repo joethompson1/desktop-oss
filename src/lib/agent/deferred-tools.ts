@@ -1,4 +1,4 @@
-// Deferred tool loading for the orchestrator. Ported from clive
+// Deferred tool loading for the orchestrator. Ported from the upstream
 // backend's `apps/backend/src/agent/deferred-tools.ts`. The mechanism
 // has two halves:
 //
@@ -22,7 +22,7 @@
 // multi-step loop (the SDK only continues after a client tool call,
 // not after a provider tool with synchronous results — see
 // `node_modules/ai/dist/index.mjs` loop continuation condition).
-// Clive backend learned this the hard way (JAR-1485); we adopt the
+// the upstream backend learned this the hard way (JAR-1485); we adopt the
 // fix from the start.
 
 import { tool, type ModelMessage, type Tool, type ToolSet } from "ai";

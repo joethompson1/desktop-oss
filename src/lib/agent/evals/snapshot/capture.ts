@@ -19,8 +19,8 @@ import type {
 } from "./types.js";
 
 /** Bundle identifier from `src-tauri/tauri.conf.json`. */
-const TAURI_IDENTIFIER = "io.github.clive-oss";
-const DB_FILENAME = "clive-oss.db";
+const TAURI_IDENTIFIER = "io.github.desktop-oss";
+const DB_FILENAME = "desktop-oss.db";
 
 /** Compute the default DB path for the current OS. */
 export function defaultDbPath(): string {

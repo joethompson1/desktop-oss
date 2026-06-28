@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The bar above the prompt bar. Ported from clive-desktop's
+  // The bar above the prompt bar. Ported from desktop-oss's
   // CockpitBranchBar, driven by the local `repo_status` instead of a
   // backend job. The leading element is the clickable working-directory
   // chip (folder picker); when the folder is a git repo it also shows

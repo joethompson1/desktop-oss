@@ -9,7 +9,7 @@
 // calls. The CRITICAL section of the system prompt only carries weight
 // when the history is consistent with it.
 //
-// Pattern mirrored from Clive backend's `conversation-manager.ts`
+// Pattern mirrored from the upstream backend's `conversation-manager.ts`
 // (`rowToModelMessage` + `ensureToolResultPairing`), adapted for
 // desktop-oss's `UIChatTurn` shape — text + tool parts live on the same
 // assistant turn rather than spanning ASSISTANT and TOOL rows, which

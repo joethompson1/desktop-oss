@@ -8,6 +8,9 @@
   import Sidebar from "$lib/components/shell/Sidebar.svelte";
   import SidebarToggle from "$lib/components/shell/SidebarToggle.svelte";
   import AppTopBar from "$lib/components/shell/AppTopBar.svelte";
+  import RightDock from "$lib/components/shell/RightDock.svelte";
+  import { modules } from "$lib/modules/store.svelte";
+  import { setPanelOpener } from "$lib/modules/dock-actions";
   import oneLightCss from "highlight.js/styles/atom-one-light.css?raw";
   import oneDarkCss from "highlight.js/styles/atom-one-dark.css?raw";
 
@@ -20,10 +23,23 @@
     page.url.pathname.startsWith("/conversations/"),
   );
 
+  // Right dock: only on routes that carry a conversation id, and only once at
+  // least one enabled module contributes a panel. With no modules it never
+  // shows and `main` keeps its full width.
+  const conversationId = $derived(page.params.id ?? "");
+  const dockActive = $derived(
+    showShell && conversationId !== "" && modules.panels().length > 0,
+  );
+  const panelOpen = $derived(dockActive && ui.openPanelId !== null);
+
   onMount(() => {
     health.start();
     conversations.startPolling();
     void ui.startFullscreenTracking();
+
+    // Let module tools open their panel via dock-actions without importing the
+    // UI store into the agent graph.
+    setPanelOpener((id) => ui.openPanel(id));
 
     document
       .querySelectorAll("style[data-hljs-theme]")
@@ -63,7 +79,11 @@
       <Sidebar />
     {/if}
 
-    <main class:has-pinned-sidebar={!ui.sidebarCollapsed}>
+    <main
+      class:has-pinned-sidebar={!ui.sidebarCollapsed}
+      class:has-right-rail={dockActive}
+      class:has-right-panel={panelOpen}
+    >
       {#if !onCockpitRoute}
         <AppTopBar />
       {/if}
@@ -71,6 +91,8 @@
         {@render children()}
       </div>
     </main>
+
+    <RightDock {conversationId} active={dockActive} />
   {:else}
     <main class="no-shell">
       <div class="content">
@@ -101,13 +123,23 @@
     min-width: 0;
     min-height: 0;
     background: var(--bg);
-    transition: padding-left 0.22s cubic-bezier(0.2, 0, 0.2, 1);
+    transition: padding 0.22s cubic-bezier(0.2, 0, 0.2, 1);
   }
   main.no-shell {
     padding-top: 44px;
   }
   main.has-pinned-sidebar {
     padding-left: 260px;
+  }
+  /* Reserve space for the right dock so content never sits under it. The
+     -panel rule must follow the -rail rule so it wins when both apply. */
+  main.has-right-rail {
+    padding-right: calc(var(--right-rail-width) + 16px);
+  }
+  main.has-right-panel {
+    padding-right: calc(
+      var(--right-rail-width) + var(--right-panel-width) + 24px
+    );
   }
   .content {
     flex: 1 1 auto;

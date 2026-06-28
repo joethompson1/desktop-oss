@@ -1,4 +1,4 @@
-// Wire shapes for the eval harness. Modelled on Clive backend's
+// Wire shapes for the eval harness. Modelled on the upstream backend's
 // `apps/backend/src/agent/evals/types.ts` so scorers and runners port
 // cleanly between the two projects.
 

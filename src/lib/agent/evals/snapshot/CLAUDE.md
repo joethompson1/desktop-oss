@@ -22,7 +22,7 @@ npm run capture-eval-snapshot -- --out lru-repro
 
 # Point at a different DB or conversation.
 npm run capture-eval-snapshot -- \
-  --db /path/to/clive-oss.db \
+  --db /path/to/desktop-oss.db \
   --conversation-id some-other-id
 ```
 

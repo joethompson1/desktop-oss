@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Clive</title>
+    <title>Desktop OSS</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -60,6 +60,11 @@
         --text-meta: 0.92em;
         --text-caption: 0.82em;
         --code-mono: "SF Mono", Menlo, Consolas, monospace;
+
+        /* Right-dock (module panels) geometry — see RightDock.svelte and
+           the main padding-right rules in +layout.svelte. */
+        --right-rail-width: 44px;
+        --right-panel-width: 340px;
       }
 
       @media (prefers-color-scheme: light) {

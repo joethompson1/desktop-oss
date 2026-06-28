@@ -87,7 +87,7 @@ src/lib/agent/evals/
     └── snapshot-replay.eval.ts             # parameterised replay template
 ```
 
-The directory is a parallel to Clive backend's `apps/backend/src/agent/evals/`
+The directory is a parallel to the upstream backend's `apps/backend/src/agent/evals/`
 — types and scorer names match where they make sense, so anything we
 learn in either project ports cleanly.
 

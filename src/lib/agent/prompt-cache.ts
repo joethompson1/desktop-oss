@@ -1,4 +1,4 @@
-// Prompt-cache breakpoint helpers for Anthropic models. Ported from clive
+// Prompt-cache breakpoint helpers for Anthropic models. Ported from the upstream
 // backend's `apps/backend/src/agent/prompt-cache.ts`.
 //
 // Three cache_control: { type: 'ephemeral' } breakpoints per turn maximise

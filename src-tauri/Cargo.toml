@@ -1,11 +1,11 @@
 [package]
-name = "clive-desktop-oss"
+name = "desktop-oss"
 version = "0.1.0"
 description = "Open-source orchestrator-and-agents chat desktop app"
 edition = "2021"
 
 [lib]
-name = "clive_desktop_oss_lib"
+name = "desktop_oss_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

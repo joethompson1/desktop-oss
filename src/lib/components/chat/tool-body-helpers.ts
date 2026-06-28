@@ -1,6 +1,6 @@
 /**
  * Helpers for rendering tool inputs/results in the chat surface. Ported
- * verbatim from clive-desktop's cockpit so the in-chat tool entries pick
+ * verbatim from desktop-oss's cockpit so the in-chat tool entries pick
  * up the same syntax-highlighting and diff heuristics.
  */
 

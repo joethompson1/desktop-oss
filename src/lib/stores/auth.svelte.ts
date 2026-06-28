@@ -23,21 +23,12 @@ class AuthStore {
     return this.hasToken ? "configured" : null;
   }
 
-  /** Kept for shell compatibility — not meaningful in OSS. */
-  get cliveUrl(): string {
-    return "local://orchestrator";
-  }
-
   hydrate(): void {
     this.#hydrated = true;
   }
 
   setToken(_value: string | null): void {
     // no-op — adapter list is the source of truth
-  }
-
-  setCliveUrl(_value: string): void {
-    // no-op
   }
 }
 

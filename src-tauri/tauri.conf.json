@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "clive-desktop-oss",
+  "productName": "desktop-oss",
   "version": "0.1.0",
-  "identifier": "io.github.clive-oss",
+  "identifier": "io.github.desktop-oss",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "Clive",
+        "title": "Desktop OSS",
         "width": 1200,
         "height": 800,
         "titleBarStyle": "Overlay",
@@ -42,7 +42,7 @@
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:clive-oss.db"]
+      "preload": ["sqlite:desktop-oss.db"]
     }
   }
 }

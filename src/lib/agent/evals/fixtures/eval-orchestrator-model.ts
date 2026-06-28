@@ -38,7 +38,7 @@ export function buildEvalOrchestratorModel(): EvalOrchestratorModel {
     // Pin the base URL — Claude Code / Claude Desktop inject
     // `ANTHROPIC_BASE_URL=https://api.anthropic.com` (no `/v1`) into the
     // process env, which makes the SDK build a 404 path. See
-    // clive/apps/backend/src/agent/model-selection.ts for the same fix.
+    // the upstream backend apps/backend/src/agent/model-selection.ts for the same fix.
     const anthropic = createAnthropic({
       apiKey,
       baseURL: "https://api.anthropic.com/v1",

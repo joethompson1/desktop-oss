@@ -109,7 +109,7 @@ async function installWatcherOnce(): Promise<void> {
     joinPath(home, ".claude"),
     joinPath(home, ".cursor"),
     joinPath(home, ".codex"),
-    joinPath(home, ".clive"),
+    joinPath(home, ".desktop-oss"),
   ];
   try {
     await watchSkillDirs(roots, () => scheduleRefresh());
