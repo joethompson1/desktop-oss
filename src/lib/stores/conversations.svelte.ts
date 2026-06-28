@@ -6,7 +6,7 @@
 import type { RunSummary } from "$lib/types/run";
 import {
   deleteConversation,
-  listConversations,
+  listStartedConversations,
   updateConversationTitle,
   type Conversation,
 } from "$lib/db/conversations";
@@ -142,7 +142,7 @@ class ConversationsStore {
   }
 
   async #load(): Promise<void> {
-    const sessions = await listConversations();
+    const sessions = await listStartedConversations();
     const runs = await listRunsForConversations(sessions.map((s) => s.id));
     const byConversation: Record<string, RunSummary[]> = {};
     for (const run of runs) {

@@ -74,6 +74,20 @@ export async function listConversations(): Promise<Conversation[]> {
   return rows.map(rowToConversation);
 }
 
+/** Sessions the user has actually started — those with at least one
+ *  message. The sidebar and the `/` landing use this so an untouched draft
+ *  or an auto-created empty session never appears until its first message. */
+export async function listStartedConversations(): Promise<Conversation[]> {
+  const db = await getDb();
+  const rows = await db.select<ConversationRow[]>(
+    `SELECT c.id, c.title, c.working_directory, c.created_at, c.updated_at, c.archived
+     FROM conversations c
+     WHERE EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id)
+     ORDER BY c.updated_at DESC`,
+  );
+  return rows.map(rowToConversation);
+}
+
 export async function getConversation(
   id: string,
 ): Promise<Conversation | null> {

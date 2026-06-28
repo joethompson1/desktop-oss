@@ -23,7 +23,6 @@ export const DEFAULT_SOURCE_ENABLEMENT: SourceEnablement = {
     claude: true,
     cursor: true,
     codex: true,
-    mcp: true,
   },
 };
 

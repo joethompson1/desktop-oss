@@ -71,10 +71,8 @@ export function substituteVariables(body: string, ctx: SubstitutionContext): str
 
 /** Derive the skill's directory from its origin path. Nested skills
  *  (`/skills/<name>/SKILL.md`) → parent dir. Flat skills
- *  (`/commands/<name>.md`) → containing dir. MCP origins are passed
- *  through verbatim. */
+ *  (`/commands/<name>.md`) → containing dir. */
 export function skillDirFor(skill: Skill): string {
-  if (skill.source === "mcp") return skill.origin;
   const lastSlash = skill.origin.lastIndexOf("/");
   if (lastSlash <= 0) return skill.origin;
   const stem = skill.origin.slice(lastSlash + 1);

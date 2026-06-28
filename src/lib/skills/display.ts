@@ -13,8 +13,6 @@ export function displayPrefix(source: SkillSource): string {
       return "codex";
     case "local":
       return "";
-    case "mcp":
-      return "mcp";
   }
 }
 
@@ -29,8 +27,6 @@ export function sourceLabel(source: SkillSource): string {
       return "Codex";
     case "local":
       return "Local";
-    case "mcp":
-      return "MCP";
   }
 }
 

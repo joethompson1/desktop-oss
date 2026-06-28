@@ -1,4 +1,4 @@
-export type SkillSource = "claude" | "cursor" | "codex" | "local" | "mcp";
+export type SkillSource = "claude" | "cursor" | "codex" | "local";
 
 export interface SkillArgumentSpec {
   name: string;
@@ -11,13 +11,12 @@ export interface SkillArgumentSpec {
  *  so MCP-sourced prompts can be wrapped without translation in the
  *  future. */
 export interface Skill {
-  /** Composite ID — `${source}:${name}` for filesystem-sourced,
-   *  `mcp:${serverName}:${promptName}` for MCP. */
+  /** Composite ID — `${source}:${name}`. */
   id: string;
   /** Display name, no leading slash. Hyphenated. */
   name: string;
   source: SkillSource;
-  /** Filesystem path (filesystem-sourced) or `mcp:<server>` (MCP). */
+  /** Filesystem path to the skill source. */
   origin: string;
   description: string;
   whenToUse?: string;

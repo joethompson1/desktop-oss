@@ -173,6 +173,13 @@
   // Track the prompt-bar's measured height so the inner's bottom padding
   // can grow with it (textarea expansion, attachment tray opening, etc).
   $effect(() => {
+    // No composer rendered → no bottom padding, so the message list sits
+    // flush at the bottom instead of leaving a dead gap where the prompt
+    // bar would be.
+    if (!showComposer) {
+      bottomPad = 0;
+      return;
+    }
     if (!surfaceEl) return;
     const wrapper = surfaceEl.querySelector(".composer-wrapper");
     if (!wrapper) return;

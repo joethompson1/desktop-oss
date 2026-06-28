@@ -4,6 +4,7 @@
   import { adapters } from "$lib/stores/adapters.svelte";
   import { health } from "$lib/stores/health.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
+  import { modules } from "$lib/modules/store.svelte";
   import {
     deleteConversation,
     listConversations,
@@ -51,7 +52,7 @@
   } from "$lib/adapters/presets";
   import AdapterCard from "$lib/components/settings/AdapterCard.svelte";
 
-  type Tab = "adapters" | "prompts" | "skills" | "about";
+  type Tab = "adapters" | "prompts" | "skills" | "modules" | "about";
   let tab = $state<Tab>("adapters");
 
   // ─── Adapters: New-adapter form state ──────────────────────────────────
@@ -380,7 +381,7 @@
       await deleteConversation(convo.id);
     }
     await conversations.refresh();
-    // Back to `/`, which recreates a fresh default session.
+    // Back to `/`, which lands on a fresh draft (no started sessions left).
     await goto("/");
   }
 </script>
@@ -405,6 +406,12 @@
     </button>
     <button class:active={tab === "skills"} onclick={() => (tab = "skills")}>
       Skills
+    </button>
+    <button
+      class:active={tab === "modules"}
+      onclick={() => (tab = "modules")}
+    >
+      Modules
     </button>
     <button class:active={tab === "about"} onclick={() => (tab = "about")}>
       About
@@ -848,6 +855,45 @@
             </li>
           {/each}
         </ul>
+      {/if}
+    </section>
+  {:else if tab === "modules"}
+    <section class="panel">
+      <p class="intro">
+        Modules are drop-in features that can add a tool the agent can call
+        and a panel in the right-hand dock. Toggle which ones are active. Add
+        one by creating a folder under
+        <code>src/lib/modules/&lt;id&gt;/</code> — it appears here
+        automatically.
+      </p>
+
+      {#if modules.all().length === 0}
+        <p class="muted">
+          No modules installed yet. Drop one in
+          <code>src/lib/modules/</code> and it'll show up here.
+        </p>
+      {:else}
+        <div class="skill-sources">
+          {#each modules.all() as m (m.id)}
+            <label class="skill-source-row">
+              <input
+                type="checkbox"
+                checked={modules.isEnabled(m.id)}
+                onchange={(e) =>
+                  void modules.setEnabled(
+                    m.id,
+                    (e.currentTarget as HTMLInputElement).checked,
+                  )}
+              />
+              <span class="skill-source-name"
+                >{m.icon ? `${m.icon} ` : ""}{m.label}</span
+              >
+              {#if m.panel}
+                <code class="skill-source-prefix">panel</code>
+              {/if}
+            </label>
+          {/each}
+        </div>
       {/if}
     </section>
   {:else if tab === "about"}

@@ -39,7 +39,6 @@ const SOURCE_PRIORITY: SkillSource[] = [
   "claude",
   "cursor",
   "codex",
-  "mcp",
 ];
 
 const PREFIX_TO_SOURCE: Record<string, SkillSource> = {
@@ -47,7 +46,6 @@ const PREFIX_TO_SOURCE: Record<string, SkillSource> = {
   cursor: "cursor",
   codex: "codex",
   local: "local",
-  mcp: "mcp",
 };
 
 /** Resolve a typed command name to a concrete skill. Namespaced names

@@ -3,13 +3,12 @@ import type { Skill, SkillSource, UsageMap } from "./types";
 
 /** Display order for source-grouping in the menu — Local first (the
  *  user authored these), then Anthropic / Cursor / Codex by ecosystem
- *  maturity, then MCP (advertised by external servers). */
+ *  maturity. */
 const SOURCE_ORDER: Record<SkillSource, number> = {
   local: 0,
   claude: 1,
   cursor: 2,
   codex: 3,
-  mcp: 4,
 };
 
 /** Recency-weighted score, ported from Claude Code's
@@ -79,7 +78,7 @@ export function filterSkills(
     if (r >= 0) scored.push({ s, r });
   }
   // Sort order:
-  //   1. Source group (local → anthropic → cursor → codex → mcp) so the
+  //   1. Source group (local → anthropic → cursor → codex) so the
   //      menu reads as bands of one provider at a time.
   //   2. Score within the group — when filtering, the best name match
   //      floats to the top of its band.

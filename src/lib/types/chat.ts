@@ -68,7 +68,7 @@ export interface SkillInvocationMeta {
   /** Skill name as resolved at send-time (e.g. "commit"). */
   name: string;
   /** Source family — drives the chip badge styling. */
-  source: "claude" | "cursor" | "codex" | "local" | "mcp";
+  source: "claude" | "cursor" | "codex" | "local";
   /** "inline" (Phase 3) or "fork" (Phase 6). */
   context: "inline" | "fork";
   /** Raw arguments the user typed after the command name. */
