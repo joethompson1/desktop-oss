@@ -9,7 +9,6 @@
     type OrchestratorChatStore,
   } from "$lib/stores/chat.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
-  import { repoStatus } from "$lib/stores/repo-status.svelte";
   import { pickDirectory } from "$lib/rust/pick-directory";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
 
@@ -18,8 +17,6 @@
   let handle = $state<OrchestratorChatStore | null>(null);
   let workingDirectory = $state<string>("");
   let loadError = $state<string | null>(null);
-
-  const status = $derived(repoStatus.statusFor(workingDirectory));
 
   // One orchestrator store per session id. Rebuilt (and the previous one
   // disposed — unsubscribing its completion listener + clearing its timer)
@@ -42,7 +39,6 @@
           return;
         }
         workingDirectory = convo.workingDirectory ?? "";
-        void repoStatus.refresh(workingDirectory);
         local = createOrchestratorChatStore({
           conversationId: id,
           getWorkingDirectory: () => workingDirectory,
@@ -68,7 +64,6 @@
     if (!picked || picked === workingDirectory) return;
     workingDirectory = picked;
     await updateConversationWorkingDirectory(sessionId, picked);
-    void repoStatus.refresh(picked, true);
     await conversations.refresh();
   }
 </script>
@@ -81,7 +76,6 @@
       store={handle.store}
       {sessionId}
       {workingDirectory}
-      repoStatus={status}
       onChangeDirectory={changeDirectory}
     />
   {/if}

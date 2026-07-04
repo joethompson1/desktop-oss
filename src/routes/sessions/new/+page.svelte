@@ -8,7 +8,6 @@
     type OrchestratorChatStore,
   } from "$lib/stores/chat.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
-  import { repoStatus } from "$lib/stores/repo-status.svelte";
   import { pickDirectory } from "$lib/rust/pick-directory";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
 
@@ -18,14 +17,11 @@
   let workingDirectory = $state<string>("");
   let handle = $state<OrchestratorChatStore | null>(null);
 
-  const status = $derived(repoStatus.statusFor(workingDirectory));
-
   onMount(async () => {
     // "+" on a sidebar group passes ?dir=<that folder>; otherwise default
     // to the home directory.
     workingDirectory =
       page.url.searchParams.get("dir") || (await homeDir()) || "/";
-    void repoStatus.refresh(workingDirectory);
 
     handle = createOrchestratorChatStore({
       conversationId: null,
@@ -47,7 +43,6 @@
     const picked = await pickDirectory(workingDirectory);
     if (!picked) return;
     workingDirectory = picked;
-    void repoStatus.refresh(picked);
   }
 </script>
 
@@ -56,7 +51,6 @@
     <ChatSurface
       store={handle.store}
       {workingDirectory}
-      repoStatus={status}
       onChangeDirectory={changeDirectory}
     />
   {/if}

@@ -159,6 +159,15 @@ fn run_in(dir: &str, program: &str, args: &[&str]) -> Option<(bool, String, Stri
     })
 }
 
+/// True when a `git` binary can be spawned. Consulted once by the git
+/// module's default-enablement probe.
+#[tauri::command]
+fn git_available() -> bool {
+    run_in(".", "git", &["--version"])
+        .map(|(ok, _, _)| ok)
+        .unwrap_or(false)
+}
+
 /// Compute the git + GitHub status of a working directory by shelling out
 /// to `git` and `gh`. Local-first equivalent of a webhook-driven PR
 /// state. Always returns a value; failures are represented in the fields
@@ -1186,6 +1195,7 @@ pub fn run() {
             write_text_file,
             list_directory,
             home_dir,
+            git_available,
             repo_status,
             read_claude_code_credentials,
             refresh_claude_code_credentials,

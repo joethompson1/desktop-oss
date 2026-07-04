@@ -4,7 +4,6 @@
   import ChatInput from "$lib/components/chat/ChatInput.svelte";
   import ConversationScroll from "$lib/components/shared/ConversationScroll.svelte";
   import type { ChatStore } from "$lib/stores/chat-store.svelte";
-  import type { RepoStatus } from "$lib/stores/repo-status.svelte";
   import type { SkillSource } from "$lib/skills/types";
 
   interface Props {
@@ -15,11 +14,9 @@
     /** Conversation/session id, threaded to the composer for skill
      *  materialisation. Omitted on delegate run surfaces. */
     sessionId?: string;
-    /** Working directory shown in the branch bar just above the prompt bar.
+    /** Working directory shown in the bar just above the prompt bar.
      *  When set with `onChangeDirectory`, the folder chip is clickable. */
     workingDirectory?: string;
-    /** git/GitHub status of the working directory, shown in the branch bar. */
-    repoStatus?: RepoStatus | null;
     /** Invoked when the user clicks the folder chip. Omit to render it
      *  read-only (or omit `workingDirectory` to hide the bar entirely). */
     onChangeDirectory?: () => void;
@@ -39,7 +36,6 @@
     store,
     sessionId,
     workingDirectory,
-    repoStatus,
     onChangeDirectory,
     showComposer = true,
     allowAttachments = true,
@@ -267,7 +263,6 @@
       store={chat}
       {sessionId}
       {workingDirectory}
-      {repoStatus}
       {onChangeDirectory}
       sending={chat.sending}
       onSend={(text, attachments, skillContext) =>

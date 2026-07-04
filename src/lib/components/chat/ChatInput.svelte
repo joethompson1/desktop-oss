@@ -8,9 +8,8 @@
   import PromptBar from "$lib/components/shared/PromptBar.svelte";
   import SlashMenu from "$lib/components/chat/SlashMenu.svelte";
   import ShellPermissionPanel from "$lib/components/permissions/ShellPermissionPanel.svelte";
-  import BranchBar from "$lib/components/chat/BranchBar.svelte";
+  import WorkdirBar from "$lib/components/chat/WorkdirBar.svelte";
   import type { ChatStore } from "$lib/stores/chat-store.svelte";
-  import type { RepoStatus } from "$lib/stores/repo-status.svelte";
   import {
     shouldShowMenu,
     parseSlashCommand,
@@ -38,11 +37,8 @@
     store: ChatStore;
     /** Conversation/session id used as the skill-materialisation scope. */
     sessionId?: string;
-    /** Working directory shown in the branch bar directly above the input. */
+    /** Working directory shown in the bar directly above the input. */
     workingDirectory?: string;
-    /** git/GitHub status of the working directory (branch + PR), shown in
-     *  the branch bar. */
-    repoStatus?: RepoStatus | null;
     /** Click handler for the folder chip (re-pick a folder). When omitted
      *  the chip renders read-only. */
     onChangeDirectory?: () => void;
@@ -78,7 +74,6 @@
     store,
     sessionId,
     workingDirectory,
-    repoStatus,
     onChangeDirectory,
     onSend,
     sending,
@@ -360,9 +355,9 @@
       </div>
     {/if}
     {#if workingDirectory}
-      <BranchBar
+      <WorkdirBar
         {workingDirectory}
-        status={repoStatus ?? null}
+        conversationId={sessionId ?? ""}
         {onChangeDirectory}
       />
     {/if}

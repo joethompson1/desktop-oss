@@ -16,6 +16,7 @@ import {
   markStaleRunsAbandoned,
 } from "$lib/db/runs";
 import { repoStatus } from "./repo-status.svelte";
+import { modules } from "$lib/modules/store.svelte";
 
 /** A run rendered as a sidebar row (nested under its session). */
 export interface ConversationCard {
@@ -152,7 +153,11 @@ class ConversationsStore {
     this.#runs = byConversation;
     // Refresh each session folder's git/PR status (fire-and-forget; the
     // staleness guard keeps this from spamming `gh` on every 3s poll).
-    void repoStatus.refreshAll(sessions.map((s) => s.workingDirectory));
+    // Skipped entirely while the git module is off so a git-less install
+    // never shells out. Stopgap module-id check, same as SessionRow.
+    if (modules.isEnabled("git")) {
+      void repoStatus.refreshAll(sessions.map((s) => s.workingDirectory));
+    }
   }
 
   /** Rename a session (the row's "Rename" action). */

@@ -7,6 +7,7 @@
     type SessionCard,
   } from "$lib/stores/conversations.svelte";
   import { repoStatus } from "$lib/stores/repo-status.svelte";
+  import { modules } from "$lib/modules/store.svelte";
   import ConversationRow from "./ConversationRow.svelte";
   import RepoStatusIcon from "./RepoStatusIcon.svelte";
 
@@ -27,7 +28,14 @@
     session.runs.filter((r) => r.status === "RUNNING" || r.status === "PENDING")
       .length,
   );
-  const status = $derived(repoStatus.statusFor(session.workingDirectory));
+  // Stopgap: gated on the git module by id until a generic sidebar-row
+  // decoration seam exists. The running indicator below is not git-specific
+  // and stays either way.
+  const status = $derived(
+    modules.isEnabled("git")
+      ? repoStatus.statusFor(session.workingDirectory)
+      : null,
+  );
   const displayTitle = $derived(session.title?.trim() || "New chat");
 
   function openSession() {

@@ -88,11 +88,15 @@ Modules live in `src/lib/modules/`. **Full authoring guide:
   `export default defineModule({...})`. Adding/removing a module = a
   folder. **No core edits, ever.**
 - **The contract** (`types.ts`): declare any subset of `{ createState,
-  panel, tools, promptFragment, settings }` + `id`/`label`/`icon`.
+  panel, inputAccessory, tools, promptFragment, settings }` +
+  `id`/`label`/`icon`, plus `defaultEnabled()` — a one-shot capability
+  probe persisted as the initial enablement (e.g. the git module is off
+  by default when git isn't installed).
 - **Seams** (all wired automatically): tools + promptFragment merge in
   `loop.ts` via `integration.ts`; panels render in `RightDock.svelte`;
-  per-conversation state lives in `host.ts` (shared by tool + panel);
-  enablement in `store.svelte.ts`.
+  input accessories render in `WorkdirBar.svelte` (the bar above the
+  prompt input); per-conversation state lives in `host.ts` (shared by
+  tool + panel); enablement in `store.svelte.ts`.
 - **Keep the agent graph clean.** `modules/{registry,host,integration,
   dock-actions}.ts` are plain TS — no runes, no UI/Tauri imports — and
   the glob is node-guarded, so `loop.ts` stays importable under the

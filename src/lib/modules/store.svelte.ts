@@ -45,13 +45,39 @@ class ModulesStore {
     return this.enabled().filter((m) => m.panel);
   }
 
+  /** Enabled modules that contribute a prompt-input accessory. */
+  inputAccessories(): AppModule[] {
+    return this.enabled().filter((m) => m.inputAccessory);
+  }
+
   async hydrate(): Promise<void> {
     if (this.#hydrated) return;
     try {
-      const saved = await getSetting<Record<string, boolean>>(
-        MODULE_ENABLEMENT_KEY,
+      const saved =
+        (await getSetting<Record<string, boolean>>(MODULE_ENABLEMENT_KEY)) ??
+        {};
+      // Modules the user has never toggled get one shot at probing their
+      // own default (e.g. "is git installed?"). Persisting the result keeps
+      // the agent-side read in integration.ts consistent with the UI.
+      const unprobed = discoveredModules.filter(
+        (m) => m.defaultEnabled && !(m.id in saved),
       );
-      if (saved) this.#enablement = saved;
+      if (unprobed.length > 0) {
+        const probed = await Promise.all(
+          unprobed.map(async (m): Promise<[string, boolean]> => {
+            try {
+              return [m.id, await m.defaultEnabled!()];
+            } catch {
+              return [m.id, m.enabledByDefault ?? true];
+            }
+          }),
+        );
+        const next = { ...saved, ...Object.fromEntries(probed) };
+        this.#enablement = next;
+        await setSetting(MODULE_ENABLEMENT_KEY, next);
+      } else {
+        this.#enablement = saved;
+      }
     } catch {
       // best-effort
     } finally {

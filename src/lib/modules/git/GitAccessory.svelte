@@ -1,25 +1,18 @@
 <script lang="ts">
-  // The bar above the prompt bar. Ported from desktop-oss's
-  // CockpitBranchBar, driven by the local `repo_status` instead of a
-  // backend job. The leading element is the clickable working-directory
-  // chip (folder picker); when the folder is a git repo it also shows
-  // repo · base ← head and a PR action button + diff stats.
+  // Prompt-bar accessory: repo · base ← head branch pills, PR diff stats,
+  // and a PR action button for the current working directory. Owns its own
+  // data fetching via the shared repoStatus cache.
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import type { RepoStatus } from "$lib/stores/repo-status.svelte";
+  import { repoStatus } from "$lib/stores/repo-status.svelte";
+  import type { ModuleInputAccessoryProps } from "$lib/modules/types";
 
-  interface Props {
-    workingDirectory: string;
-    status: RepoStatus | null;
-    onChangeDirectory?: () => void;
-  }
+  let { workingDirectory }: ModuleInputAccessoryProps = $props();
 
-  let { workingDirectory, status, onChangeDirectory }: Props = $props();
+  $effect(() => {
+    if (workingDirectory) void repoStatus.refresh(workingDirectory);
+  });
 
-  function dirBasename(dir: string): string {
-    const trimmed = dir.replace(/\/+$/, "");
-    const slash = trimmed.lastIndexOf("/");
-    return slash >= 0 ? trimmed.slice(slash + 1) || trimmed : trimmed;
-  }
+  const status = $derived(repoStatus.statusFor(workingDirectory));
 
   interface RepoCoords {
     owner: string;
@@ -41,7 +34,6 @@
     return null;
   }
 
-  const folderName = $derived(dirBasename(workingDirectory));
   const isRepo = $derived(status?.isRepo ?? false);
   const coords = $derived(parseRepository(status?.repository ?? null));
   const repoShort = $derived(coords?.repo ?? "");
@@ -81,28 +73,8 @@
   }
 </script>
 
-<div class="branch-bar" data-testid="branch-bar">
-  <button
-    type="button"
-    class="folder"
-    disabled={!onChangeDirectory}
-    title={onChangeDirectory
-      ? `${workingDirectory} — click to change`
-      : workingDirectory}
-    onclick={() => onChangeDirectory?.()}
-  >
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M1.5 4.5A1 1 0 0 1 2.5 3.5h3l1.2 1.4h6.8a1 1 0 0 1 1 1v6.1a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4.5Z" />
-    </svg>
-    <span class="folder-name">{folderName}</span>
-    {#if onChangeDirectory}
-      <svg class="caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="4 6 8 10 12 6" />
-      </svg>
-    {/if}
-  </button>
-
-  {#if isRepo && headBranch}
+{#if isRepo && headBranch}
+  <div class="git-accessory" data-testid="git-accessory">
     <span class="branch-icon" aria-hidden="true">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="5" cy="3" r="1.5" />
@@ -120,81 +92,37 @@
       <span class="arrow" aria-hidden="true">←</span>
       <span class="branch-pill head" title={headBranch}>{headBranch}</span>
     </span>
-  {/if}
 
-  <span class="spacer"></span>
+    <span class="spacer"></span>
 
-  {#if showStats && pr}
-    <span class="stats" data-testid="branch-stats">
-      <span class="add">+{pr.additions}</span>
-      <span class="del">-{pr.deletions}</span>
-    </span>
-  {/if}
-  {#if action}
-    <button
-      type="button"
-      class="action"
-      data-pr-state={pr?.state ?? "none"}
-      data-testid="branch-action"
-      onclick={handleAction}
-      title={action.href}
-    >
-      {action.label}
-    </button>
-  {/if}
-</div>
+    {#if showStats && pr}
+      <span class="stats" data-testid="branch-stats">
+        <span class="add">+{pr.additions}</span>
+        <span class="del">-{pr.deletions}</span>
+      </span>
+    {/if}
+    {#if action}
+      <button
+        type="button"
+        class="action"
+        data-pr-state={pr?.state ?? "none"}
+        data-testid="branch-action"
+        onclick={handleAction}
+        title={action.href}
+      >
+        {action.label}
+      </button>
+    {/if}
+  </div>
+{/if}
 
 <style>
-  .branch-bar {
+  .git-accessory {
     display: flex;
     align-items: center;
     gap: 0.5em;
-    align-self: stretch;
-    padding: 0.2em 0.3em;
-    margin-bottom: 0.45em;
-    font-size: 0.8em;
-    color: var(--text-muted);
+    flex: 1 1 auto;
     min-width: 0;
-  }
-  .folder {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4em;
-    flex: 0 0 auto;
-    max-width: 220px;
-    padding: 0.25em 0.55em;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    color: var(--text-muted);
-    font-family: inherit;
-    font-size: inherit;
-    line-height: 1.3;
-    cursor: pointer;
-  }
-  .folder:hover:not(:disabled) {
-    background: var(--hover-bg);
-    border-color: var(--border);
-    color: var(--text);
-  }
-  .folder:disabled {
-    cursor: default;
-  }
-  .folder svg {
-    flex: 0 0 auto;
-    color: var(--text-faint);
-  }
-  .folder:hover:not(:disabled) svg {
-    color: var(--text-muted);
-  }
-  .folder-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--code-mono);
-  }
-  .folder .caret {
-    margin-left: 0.05em;
   }
   .branch-icon {
     display: inline-flex;

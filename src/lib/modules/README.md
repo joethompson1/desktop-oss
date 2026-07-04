@@ -4,6 +4,8 @@ A **module** is a self-contained feature that drops into the app with **no
 edits to any core file**. It may contribute any subset of:
 
 - a **right-dock panel** (a UI surface on the right of the window),
+- an **input accessory** (UI in the bar above the prompt input, next to the
+  working-directory chip),
 - **per-conversation reactive state** (shared between the panel and the agent),
 - **orchestrator tools** (so the agent can do things / drive the panel),
 - **system-prompt wording** (so the agent knows the capability exists).
@@ -121,8 +123,10 @@ export default defineModule<ExampleState>({
 | `label` | tooltip / settings name |
 | `icon` | rail glyph (emoji or 1–2 chars); falls back to first letter of `label` |
 | `enabledByDefault` | defaults to `true` |
+| `defaultEnabled()` | capability probe run ONCE when the user has never toggled the module (e.g. "is git installed?"); the result is persisted as the initial enablement. Falls back to `enabledByDefault` if it throws |
 | `createState()` | per-conversation runes state, shared by panel + tools |
 | `panel` | `{ title?, component }` — the right-dock UI; props: `{ state, conversationId }` |
+| `inputAccessory` | `{ component }` — rendered in the bar above the prompt input, after the folder chip; props: `{ state, conversationId, workingDirectory }` (`conversationId` is `""` on a draft session). Only rendered while a working directory is set. See `git/` for a real example |
 | `tools(ctx)` | returns a Vercel-AI-SDK `ToolSet`; `ctx` has `state`, `openPanel()`, `conversationId`, `workingDirectory`, `signal` |
 | `promptFragment(ctx)` | markdown appended to the system prompt while enabled |
 | `settings` | (optional) a settings panel component |

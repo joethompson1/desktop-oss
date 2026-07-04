@@ -21,6 +21,15 @@ export interface ModulePanelProps {
   conversationId: string;
 }
 
+/** Props every input-accessory component receives. Accessories render in
+ *  the bar directly above the prompt input, after the working-directory
+ *  chip. `conversationId` is "" on a draft session (no row yet). */
+export interface ModuleInputAccessoryProps {
+  state: unknown;
+  conversationId: string;
+  workingDirectory: string;
+}
+
 /** Context handed to a module's `tools(...)` factory once per orchestrator
  *  turn. The orchestrator loop runs in the webview, so a tool's `execute()`
  *  may mutate `state` directly (the mounted panel re-renders live) and call
@@ -57,6 +66,10 @@ export interface AppModule {
   icon?: string;
   /** Defaults to `true` when omitted. */
   enabledByDefault?: boolean;
+  /** Capability probe consulted ONCE — when the user has never toggled this
+   *  module — and its result persisted as the initial enablement (e.g. "is
+   *  git installed?"). Falls back to `enabledByDefault` if it throws. */
+  defaultEnabled?: () => boolean | Promise<boolean>;
   /** Per-conversation reactive state. MUST be created in a `.svelte.ts` file
    *  (runes-backed) so mutations from a tool propagate to the panel. */
   createState?: () => unknown;
@@ -64,6 +77,11 @@ export interface AppModule {
   panel?: {
     title?: string;
     component: Component<ModulePanelProps>;
+  };
+  /** UI rendered in the bar above the prompt input, after the
+   *  working-directory chip. Only shown while a working directory is set. */
+  inputAccessory?: {
+    component: Component<ModuleInputAccessoryProps>;
   };
   /** Orchestrator tools, built per turn with live context. */
   tools?: (ctx: ModuleToolContext) => ToolSet;
@@ -80,10 +98,18 @@ export interface ModuleDefinition<S = void> {
   label: string;
   icon?: string;
   enabledByDefault?: boolean;
+  defaultEnabled?: () => boolean | Promise<boolean>;
   createState?: () => S;
   panel?: {
     title?: string;
     component: Component<{ state: S; conversationId: string }>;
+  };
+  inputAccessory?: {
+    component: Component<{
+      state: S;
+      conversationId: string;
+      workingDirectory: string;
+    }>;
   };
   tools?: (ctx: ModuleToolContext<S>) => ToolSet;
   promptFragment?: (ctx: ModulePromptContext<S>) => string | Promise<string>;
