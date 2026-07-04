@@ -1173,6 +1173,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0004_session_directory.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "module state",
+            sql: include_str!("../migrations/0005_module_state.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

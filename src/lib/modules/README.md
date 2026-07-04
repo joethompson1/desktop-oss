@@ -128,9 +128,12 @@ export default defineModule<ExampleState>({
 | `enabledByDefault` | defaults to `true` |
 | `defaultEnabled()` | capability probe run ONCE when the user has never toggled the module (e.g. "is git installed?"); the result is persisted as the initial enablement. Falls back to `enabledByDefault` if it throws |
 | `createState()` | per-conversation runes state, shared by panel + tools |
+| `serializeState(state)` | (optional) snapshot `state` to a JSON value for persistence. Omit and state stays memory-only — lost on reload, fine for cheap-to-regenerate state |
+| `hydrateState(state, snapshot)` | (optional) apply a persisted snapshot onto a freshly created `state` (mutate in place). Called once, lazily, the first time a conversation's state is touched after a reload. Validate the shape — it may be from an older module version |
+| `restoreToolCall(state, toolName, input)` | (optional) replay one historical call to one of this module's tools back onto `state`, when the user clicks that call's cockpit entry in chat. Without it, clicking just re-opens the panel showing whatever is currently in `state` (which is only ever the LATEST call's result) — implement this if your module's tool can be called more than once per conversation with materially different results each time (e.g. showing several chords in a row) |
 | `panel` | `{ title?, component }` — the right-dock UI; props: `{ state, conversationId }` |
 | `inputAccessory` | `{ component }` — rendered in the bar above the prompt input, after the folder chip; props: `{ state, conversationId, workingDirectory }` (`conversationId` is `""` on a draft session). Only rendered while a working directory is set. See `git/` for a real example |
-| `tools(ctx)` | returns a Vercel-AI-SDK `ToolSet`; `ctx` has `state`, `openPanel()`, `conversationId`, `workingDirectory`, `signal` |
+| `tools(ctx)` | returns a Vercel-AI-SDK `ToolSet`; `ctx` has `state`, `openPanel()`, `persistState()`, `conversationId`, `workingDirectory`, `signal`. Call `persistState()` after a mutation you want to survive a reload (no-ops without `serializeState`) |
 | `promptFragment(ctx)` | markdown appended to the system prompt while enabled |
 | `settings` | (optional) a settings panel component |
 
@@ -148,7 +151,10 @@ raw `invoke` access.
 ## Conventions & rules
 
 1. **Namespace tool names** with the module id (`fretboard_set`, not `set`) to
-   avoid collisions with built-in tools or other modules.
+   avoid collisions with built-in tools or other modules. This also makes a
+   tool's cockpit entry in chat open the module's panel on click, instead of
+   the generic JSON disclosure (`registry.ts`'s `moduleForToolName` matches
+   on the `${id}_` prefix) — a panel-bearing module gets this for free.
 2. **State must be runes** (`$state` in a `.svelte.ts` file). Plain objects
    won't make the panel react to tool mutations.
 3. **Panels render only on conversation routes** (`/sessions/[id]`,

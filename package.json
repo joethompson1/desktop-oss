@@ -24,7 +24,7 @@
     "evals": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit src/lib/agent/evals/scenarios/**/*.eval.ts",
     "evals:one": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit",
     "capture-eval-snapshot": "tsx --experimental-sqlite src/lib/agent/evals/snapshot/cli.ts",
-    "test:unit": "tsx --test --test-force-exit src/lib/agent/**/*.test.ts src/lib/modules/**/*.test.ts"
+    "test:unit": "tsx --test --experimental-test-module-mocks --test-force-exit 'src/lib/agent/**/*.test.ts' 'src/lib/modules/**/*.test.ts'"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.77",

@@ -41,3 +41,14 @@ export function isModuleEnabled(
   if (module.id in enablement) return enablement[module.id];
   return module.enabledByDefault ?? true;
 }
+
+/** The panel-bearing module that owns a tool name, if any — found by the
+ *  `${module.id}_...` namespacing convention (README.md rule 1), not by
+ *  calling `tools()` (which needs a live turn context). Lets a cockpit entry
+ *  route its click to that module's panel instead of the generic JSON
+ *  disclosure. */
+export function moduleForToolName(toolName: string): AppModule | undefined {
+  return discoveredModules
+    .filter((m) => m.panel)
+    .find((m) => toolName.startsWith(`${m.id}_`));
+}
