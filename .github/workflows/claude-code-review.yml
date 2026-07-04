@@ -2,9 +2,10 @@ name: Claude Code Review
 
 # Multi-agent PR reviewer. When a PR is opened, a lead Claude (Sonnet 5) fans
 # out specialist sub-reviewers (one per lens) and adversarially verifies each
-# finding. It only acts when it's requesting changes: if there's a confirmed
-# blocker it posts inline comments for all findings and submits a
-# request-changes review; if there's no blocker it stays completely silent.
+# finding. It posts an inline comment for every confirmed finding (all
+# severities, incl. nits — no praise). It submits a request-changes review ONLY
+# when there's a confirmed blocker; with findings-but-no-blocker it leaves the
+# inline comments with no verdict review; with no findings it stays silent.
 #
 # Auth: the CLAUDE_CODE_OAUTH_TOKEN repo secret (generate locally with
 # `claude setup-token`, needs Claude Pro/Max). The Claude GitHub App
@@ -93,27 +94,27 @@ jobs:
                findings and correct inflated severities. Never post an unverified
                finding.
 
-            4) POST — decide the verdict FIRST: is there at least one CONFIRMED
-               blocker?
-                 • NO confirmed blocker → do NOTHING. Post no inline comments, no
-                   summary, and no review — never a `--comment` or "looks good"
-                   review. End the run silently. (The reviewer only ever speaks
-                   up when it is requesting changes.)
-                 • AT LEAST ONE confirmed blocker → post an INLINE comment via the
-                   inline-comment tool on the exact file+line for EVERY confirmed
-                   finding — all severities, including minors, nits, and general
-                   improvements, no praise — each prefixed with severity, e.g.
-                   "**[blocker]** …" / "**[nit]** …", with the reason and a
-                   concrete suggested fix. Then submit the verdict:
+            4) POST —
+                 • INLINE COMMENTS: for EVERY confirmed finding — all severities
+                   (blocker, major, minor, nit, and general improvements; no
+                   praise) — post an inline comment via the inline-comment tool
+                   on its exact file+line, prefixed with severity, e.g.
+                   "**[major]** …" / "**[nit]** …", with the reason and a concrete
+                   suggested fix.
+                 • VERDICT: ONLY if there is at least one confirmed BLOCKER,
+                   submit
                      gh pr review <PR NUMBER> --request-changes --body "<summary>"
                    (if GitHub rejects the review event, fall back to
-                   `gh pr comment <PR NUMBER> --body "<summary>"`). The summary:
-                   a 2–3 sentence read, the confirmed findings grouped by
-                   severity (counts + one-liners), and the recommendation.
+                   `gh pr comment <PR NUMBER> --body "<summary>"`). The summary: a
+                   2–3 sentence read, the findings grouped by severity, and the
+                   recommendation. If there is NO blocker, do NOT submit any
+                   review — no `--comment`, no summary; the inline comments stand
+                   on their own.
+                 • If there are NO confirmed findings at all, do nothing.
 
             Cite file:line, give concrete repros, invent nothing, and never post
-            praise. When it does request changes, a senior dev's nitpicks and
-            improvement suggestions ARE wanted alongside the blockers.
+            praise. A senior dev's nitpicks and improvement suggestions ARE
+            wanted, not just blockers.
 
           claude_args: |
             --model claude-sonnet-5
