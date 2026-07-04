@@ -10,9 +10,18 @@
   } from "$lib/stores/chat.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
   import { pickDirectory } from "$lib/rust/pick-directory";
+  import { ui } from "$lib/stores/ui.svelte";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
 
   const sessionId = $derived(page.params.id ?? "");
+
+  // Keeps +layout.svelte's right-dock activation in sync — see
+  // ui.activeConversationId's doc comment for why it can't just read
+  // `page.params.id` itself.
+  $effect(() => {
+    ui.setActiveConversationId(sessionId);
+    return () => ui.setActiveConversationId("");
+  });
 
   let handle = $state<OrchestratorChatStore | null>(null);
   let workingDirectory = $state<string>("");
