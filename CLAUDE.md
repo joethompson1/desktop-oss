@@ -242,3 +242,14 @@ Drop any → `429 rate_limit_error` even with quota. Reference: upstream
   one). **Releases**: push a `v*` tag → `.github/workflows/release.yml`.
 - Local `tauri:build` DMG can hang in a non-interactive shell; use
   `CI=1 npm run tauri:build` or `tauri build --bundles app`.
+- **New worktree → `cargo check`/`tauri:dev` fails** with `resource path
+  sidecar-dist/... doesn't exist`: `tauri.conf.json`'s `bundle.resources`
+  is validated at compile time regardless of dev vs. build, but
+  `src-tauri/sidecar-dist/` is gitignored and only produced by
+  `sidecar/stage.mjs` (needs `bun`). A `post-checkout` git hook
+  (`scripts/hooks/post-checkout`, installed into the shared hooks dir by
+  `scripts/install-git-hooks.mjs` via `postinstall` — no `core.hooksPath`
+  config change) detects a fresh `git worktree add` (prev HEAD = all-zero
+  SHA) and runs `scripts/setup-worktree.sh` (`npm install` + `stage.mjs`)
+  automatically. If the hook isn't installed yet in your checkout, run
+  `npm run setup:worktree` by hand once per new worktree.

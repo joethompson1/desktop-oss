@@ -1,0 +1,20 @@
+#!/bin/sh
+# Installed into the repo's shared git hooks dir by scripts/install-git-hooks.mjs
+# (wired into the root `postinstall` script) — hooks live in the COMMON git
+# dir, so once installed here they fire for every worktree, not just the one
+# `npm install` ran in.
+#
+# `git worktree add` runs a checkout under the hood and invokes this hook
+# with $1 (the previous HEAD) set to the all-zero SHA, since the new
+# worktree has no prior HEAD. That's a reliable "this worktree is brand
+# new" signal, so we bootstrap it the same way scripts/setup-worktree.sh
+# does manually: install deps and stage the sidecar binaries tauri.conf.json
+# needs on disk before `cargo check`/`tauri dev` will even compile.
+prev_head="$1"
+zero="0000000000000000000000000000000000000000"
+
+if [ "$prev_head" = "$zero" ]; then
+  root="$(git rev-parse --show-toplevel)"
+  echo "[post-checkout] new worktree detected — bootstrapping ($root)…"
+  "$root/scripts/setup-worktree.sh" || echo "[post-checkout] bootstrap failed — run scripts/setup-worktree.sh manually."
+fi

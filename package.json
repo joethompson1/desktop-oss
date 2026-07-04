@@ -10,7 +10,7 @@
     "npm": ">=11"
   },
   "scripts": {
-    "postinstall": "npm run sidecar:install",
+    "postinstall": "npm run sidecar:install && node scripts/install-git-hooks.mjs",
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
@@ -21,10 +21,11 @@
     "tauri:build": "tauri build",
     "sidecar:install": "cd sidecar/claude-agent && npm install && cd ../cursor-agent && npm install",
     "sidecar:build": "cd sidecar/claude-agent && bun run build && cd ../cursor-agent && bun run build",
+    "setup:worktree": "bash scripts/setup-worktree.sh",
     "evals": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit src/lib/agent/evals/scenarios/**/*.eval.ts",
     "evals:one": "tsx --test --experimental-sqlite --experimental-test-module-mocks --test-force-exit",
     "capture-eval-snapshot": "tsx --experimental-sqlite src/lib/agent/evals/snapshot/cli.ts",
-    "test:unit": "tsx --test --test-force-exit src/lib/agent/**/*.test.ts src/lib/modules/**/*.test.ts"
+    "test:unit": "tsx --test --test-force-exit 'src/lib/agent/**/*.test.ts' 'src/lib/modules/**/*.test.ts'"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.77",
