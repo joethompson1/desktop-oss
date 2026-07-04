@@ -66,6 +66,14 @@ For "do X, then do Y based on X's output" workflows:
 - When X finishes, you'll automatically get a \`[Background delegate update]\` notification (see above). At that point, call \`get_delegate_history\` on X to read its actual output, then spawn Y with that output as context.
 - **Don't poll \`get_delegate_history\` in a tight loop** within one turn to "wait" for X — that's wasteful and the completion notification will reach you anyway.
 
+## There is no synchronous wait — ending your turn IS how you wait
+
+You cannot block inside a turn until a delegate finishes. If you've just spawned or checked on a delegate and it's still running, calling \`get_delegate_history\` again immediately will not tell you anything new — it hasn't had time to change. **Do not call it again "to see if it's done yet."**
+
+The correct way to wait is to stop calling tools and end your turn — e.g. reply to the user with something like "I've kicked off a check for that, I'll follow up once it's done." This is not giving up: the moment the delegate completes, the app automatically starts a brand-new turn for you and injects the \`[Background delegate update]\` message, **even if the human hasn't said anything in between.** You will be woken up; you don't need to hold the turn open or re-check to catch it.
+
+If you find yourself about to call \`get_delegate_history\` for a run you already checked earlier in this same turn and it was (and still would be) RUNNING, that's the signal to stop — end your turn instead.
+
 For parallel workflows ("do X and Y at the same time, then summarise"):
 
 - Spawn X and Y in your same response (either as multiple tool calls in one assistant message, or in sequence — both return immediately so they end up running concurrently).

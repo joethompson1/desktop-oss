@@ -64,6 +64,13 @@ export function getOrchestratorTools(deps: OrchestratorToolDeps): {
 }
 
 function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
+  // Per-turn (this function runs once per streamOrchestratorTurn call, see
+  // loop.ts) counter of get_delegate_history checks per run. Lets us catch
+  // a model polling a still-running delegate in a tight loop within one
+  // turn and short-circuit to a cheap "stop checking" stub instead of
+  // re-fetching and re-billing the full transcript every time.
+  const delegateHistoryCallCounts = new Map<string, number>();
+
   return {
     delegate_task: tool({
       description:
@@ -267,7 +274,13 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
         "what it was asked, what it decided, what it produced, and where it got to. " +
         "For a quick status overview, read the 'Active delegate runs' table in the system prompt instead — " +
         "that is cheaper and sufficient for most decisions. " +
-        "Identify the target delegate by `name` or `runId`.",
+        "Identify the target delegate by `name` or `runId`. " +
+        "**Do not call this more than once per run per turn while it is still RUNNING.** " +
+        "A repeat check in the same turn cannot return anything new — the status hasn't had time to " +
+        "change — so a second call within the same turn returns a stub telling you to stop instead of " +
+        "the full transcript. There is no way to synchronously block until a delegate finishes: end your " +
+        "turn instead, and you'll be woken up automatically with a `[Background delegate update]` message " +
+        "the moment it completes.",
       inputSchema: z.object({
         name: z
           .string()
@@ -299,6 +312,28 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
             const target = runId ? `run ID "${runId}"` : `name "${name}"`;
             return `Error: no delegate run found for ${target}. Check the Active delegate runs table in the system prompt.`;
           }
+
+          const priorChecksThisTurn = delegateHistoryCallCounts.get(run.id) ?? 0;
+          delegateHistoryCallCounts.set(run.id, priorChecksThisTurn + 1);
+          const stillInFlight = run.status === "PENDING" || run.status === "RUNNING";
+
+          // Second+ check of the same still-running run within this turn:
+          // nothing can have changed, so skip the transcript fetch entirely
+          // and push the model to stop polling and end its turn instead.
+          if (stillInFlight && priorChecksThisTurn >= 1) {
+            return {
+              runId: run.id,
+              name: run.name ?? null,
+              status: run.status,
+              message:
+                `Still ${run.status} — unchanged since you last checked this run in this turn. ` +
+                "Checking again won't tell you anything new. STOP calling get_delegate_history for " +
+                "this run now and end your turn (a brief \"I've kicked this off, I'll follow up\" reply " +
+                "to the user is fine). You will automatically receive a `[Background delegate update]` " +
+                "message the instant this delegate finishes, even if the user hasn't sent anything.",
+            };
+          }
+
           const tail = Math.max(1, limit ?? 20);
           const recentMessages = await getRunHistoryForOrchestrator(run.id, tail);
           return {
