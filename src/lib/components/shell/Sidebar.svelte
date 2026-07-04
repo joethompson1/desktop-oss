@@ -26,19 +26,6 @@
       </svg>
       <span>New session</span>
     </button>
-    <a class="action" href="/settings">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M9 1.5 3 9h4l-1 5.5L13 7H9l1-5.5Z" />
-      </svg>
-      <span>Routines</span>
-    </a>
-    <a class="action" href="/settings">
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="2.5" y="4.5" width="11" height="8" rx="1.2" />
-        <path d="M6 4.5V3.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1" />
-      </svg>
-      <span>Customize</span>
-    </a>
   </nav>
 
   <div class="body">
