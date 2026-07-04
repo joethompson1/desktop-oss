@@ -91,7 +91,10 @@ Modules live in `src/lib/modules/`. **Full authoring guide:
   panel, inputAccessory, tools, promptFragment, settings }` +
   `id`/`label`/`icon`, plus `defaultEnabled()` — a one-shot capability
   probe persisted as the initial enablement (e.g. the git module is off
-  by default when git isn't installed).
+  by default when git isn't installed). Optional publishing metadata
+  (`version`/`author`/`description`/`repository`/`permissions`) is advisory
+  today but captured for a future module registry / app-store;
+  `MODULE_API_VERSION` versions the host contract.
 - **Seams** (all wired automatically): tools + promptFragment merge in
   `loop.ts` via `integration.ts`; panels render in `RightDock.svelte`;
   input accessories render in `WorkdirBar.svelte` (the bar above the

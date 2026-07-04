@@ -122,6 +122,9 @@ export default defineModule<ExampleState>({
 | `id` | unique; folder name; namespaces everything the module owns |
 | `label` | tooltip / settings name |
 | `icon` | rail glyph (emoji or 1–2 chars); falls back to first letter of `label` |
+| `description` | one-line summary shown in Settings → Modules (and a future store) |
+| `version` / `author` / `repository` | publishing metadata — advisory today, captured for a future module registry / "app store"; `repository` anchors a git-linked store |
+| `permissions` | `ModulePermission[]` the module declares it needs (advisory today, not enforced) |
 | `enabledByDefault` | defaults to `true` |
 | `defaultEnabled()` | capability probe run ONCE when the user has never toggled the module (e.g. "is git installed?"); the result is persisted as the initial enablement. Falls back to `enabledByDefault` if it throws |
 | `createState()` | per-conversation runes state, shared by panel + tools |
@@ -130,6 +133,17 @@ export default defineModule<ExampleState>({
 | `tools(ctx)` | returns a Vercel-AI-SDK `ToolSet`; `ctx` has `state`, `openPanel()`, `conversationId`, `workingDirectory`, `signal` |
 | `promptFragment(ctx)` | markdown appended to the system prompt while enabled |
 | `settings` | (optional) a settings panel component |
+
+## Publishing metadata (forward-looking)
+
+`version` / `author` / `repository` / `description` / `permissions` are optional
+and **advisory today** — nothing enforces them. They exist so a future module
+registry / "app store" (and remotely-installed modules from their own git repos)
+has the metadata it needs, with `repository` as the git anchor. `MODULE_API_VERSION`
+in `types.ts` versions the host contract so a future runtime-loaded module can
+check compatibility. New capabilities a module needs should be declared in
+`permissions` and, in future, gated through a consent layer rather than handed
+raw `invoke` access.
 
 ## Conventions & rules
 

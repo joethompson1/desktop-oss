@@ -11,6 +11,11 @@ export default defineModule({
   id: "git",
   label: "Git",
   icon: "⎇",
+  description:
+    "Shows the working directory's branch / PR state and teaches the orchestrator about it.",
+  version: "1.0.0",
+  author: "desktop-oss",
+  permissions: ["run-commands"],
   enabledByDefault: false,
   defaultEnabled: () => invoke<boolean>("git_available"),
   inputAccessory: { component: GitAccessory },

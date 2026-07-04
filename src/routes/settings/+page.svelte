@@ -873,9 +873,9 @@
           <code>src/lib/modules/</code> and it'll show up here.
         </p>
       {:else}
-        <div class="skill-sources">
+        <div class="module-list">
           {#each modules.all() as m (m.id)}
-            <label class="skill-source-row">
+            <label class="module-row">
               <input
                 type="checkbox"
                 checked={modules.isEnabled(m.id)}
@@ -885,12 +885,28 @@
                     (e.currentTarget as HTMLInputElement).checked,
                   )}
               />
-              <span class="skill-source-name"
-                >{m.icon ? `${m.icon} ` : ""}{m.label}</span
-              >
-              {#if m.panel}
-                <code class="skill-source-prefix">panel</code>
-              {/if}
+              <div class="module-info">
+                <div class="module-head">
+                  <span class="module-name"
+                    >{m.icon ? `${m.icon} ` : ""}{m.label}</span
+                  >
+                  {#if m.version}
+                    <span class="module-version">v{m.version}</span>
+                  {/if}
+                  {#if m.panel}
+                    <code class="skill-source-prefix">panel</code>
+                  {/if}
+                  {#if m.inputAccessory}
+                    <code class="skill-source-prefix">bar</code>
+                  {/if}
+                </div>
+                {#if m.description}
+                  <p class="module-desc">{m.description}</p>
+                {/if}
+                {#if m.author}
+                  <p class="module-meta">by {m.author}</p>
+                {/if}
+              </div>
             </label>
           {/each}
         </div>
@@ -1140,6 +1156,59 @@
     align-items: center;
     gap: 0.8em;
     margin-top: 0.6em;
+  }
+  .module-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+  }
+  .module-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8em;
+    padding: 0.6em 0.7em;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 0.06s ease;
+  }
+  .module-row:hover {
+    background: var(--hover-bg);
+  }
+  .module-row input {
+    margin-top: 0.15em;
+  }
+  .module-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15em;
+    min-width: 0;
+  }
+  .module-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+    flex-wrap: wrap;
+  }
+  .module-name {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .module-version {
+    color: var(--text-faint);
+    font-size: 0.8em;
+    font-family: var(--code-mono);
+  }
+  .module-desc {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.86em;
+  }
+  .module-meta {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 0.8em;
   }
   .banner.err {
     color: var(--danger-text);

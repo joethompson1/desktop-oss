@@ -13,6 +13,21 @@
 import type { Component } from "svelte";
 import type { ToolSet } from "ai";
 
+/** Version of the module host contract (the "plugin ABI"). Bump when the
+ *  AppModule shape or the seams change in a breaking way; a future
+ *  runtime-loaded / remotely-installed module can check this for
+ *  compatibility. */
+export const MODULE_API_VERSION = 1;
+
+/** Capabilities a module may declare it needs. Advisory today — captured in
+ *  the manifest for transparency and as the seam for a future consent /
+ *  permission gate, not yet enforced at runtime. */
+export type ModulePermission =
+  | "filesystem"
+  | "network"
+  | "run-commands"
+  | "clipboard";
+
 /** Props every panel component receives. `state` is this module's
  *  per-conversation state instance (see `createState`); cast it to your
  *  module's concrete state type inside the component. */
@@ -64,6 +79,17 @@ export interface AppModule {
   /** Rail button glyph — an emoji or a 1–2 char string. Falls back to the
    *  first letter of `label`. */
   icon?: string;
+  /** One-line description for the Modules settings tab / future store. */
+  description?: string;
+  /** Publishing metadata — advisory today, captured so a future module
+   *  registry / "app store" (and remotely-installed modules) has what it
+   *  needs. `repository` is the anchor for a git-linked store. */
+  version?: string;
+  author?: string;
+  repository?: string;
+  /** Capabilities this module needs. Advisory for now (not enforced) — the
+   *  intended home for a future consent gate. */
+  permissions?: ModulePermission[];
   /** Defaults to `true` when omitted. */
   enabledByDefault?: boolean;
   /** Capability probe consulted ONCE — when the user has never toggled this
@@ -97,6 +123,11 @@ export interface ModuleDefinition<S = void> {
   id: string;
   label: string;
   icon?: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  repository?: string;
+  permissions?: ModulePermission[];
   enabledByDefault?: boolean;
   defaultEnabled?: () => boolean | Promise<boolean>;
   createState?: () => S;
