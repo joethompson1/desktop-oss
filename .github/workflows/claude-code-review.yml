@@ -9,8 +9,11 @@ name: Claude Code Review
 # (github.com/apps/claude) must be installed on the repo.
 
 on:
+  # Runs ONCE per PR — only when it's first opened, not on every subsequent
+  # push/commit. (Add `reopened`/`ready_for_review` here if you ever want a
+  # fresh review on those events.)
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [opened]
 
 jobs:
   review:
@@ -74,6 +77,13 @@ jobs:
                     code, error handling, comments, idiomatic Svelte/TS, and
                     concrete general improvements a senior reviewer would raise.
                     Nitpicks are wanted here.
+                 G. CLAUDE.md conformance — go through EVERY CLAUDE.md file that
+                    applies to the changed paths (the root CLAUDE.md, plus any
+                    nested CLAUDE.md under a directory this PR touches) and check
+                    the PR against their rules one by one: the Conventions,
+                    Critical pitfalls, Common tasks, and any explicit
+                    "must"/"never"/"always" directive. Flag every deviation,
+                    quoting the specific CLAUDE.md rule it breaks.
 
             3) VERIFY (do not skip) — for EACH finding, spawn a skeptic Task
                subagent that re-reads the actual code and returns
