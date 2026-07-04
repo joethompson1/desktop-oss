@@ -15,7 +15,7 @@ import {
   isModuleEnabled,
   MODULE_ENABLEMENT_KEY,
 } from "./registry";
-import { getModuleState } from "./host";
+import { getModuleState, persistModuleState } from "./host";
 import { requestOpenPanel } from "./dock-actions";
 import type { AppModule } from "./types";
 
@@ -60,6 +60,7 @@ export async function getModuleContributions(
           signal: ctx.signal,
           state,
           openPanel: () => requestOpenPanel(m.id),
+          persistState: () => persistModuleState(ctx.conversationId, m, state),
         }),
       );
     }

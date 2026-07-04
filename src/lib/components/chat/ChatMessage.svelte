@@ -16,6 +16,12 @@
     content?: string;
     parts?: UIMessagePart[];
     messageId?: string;
+    /** Threaded to ToolPartView so a module tool's cockpit entry can
+     *  resolve its live per-conversation state on click. Omitted (e.g. on a
+     *  delegate run surface, or before a draft session has a real id) just
+     *  means clicking a module tool re-opens the panel without replaying
+     *  that specific call. */
+    conversationId?: string;
     streaming?: boolean;
     errored?: boolean;
     partial?: boolean;
@@ -41,6 +47,7 @@
     content = "",
     parts = [],
     messageId,
+    conversationId,
     streaming = false,
     errored = false,
     partial = false,
@@ -185,7 +192,7 @@
             <!-- invisible for now -->
           {:else}
             <div class="tool-calls" data-testid="chat-message-tool-calls">
-              <ToolPartView part={part as ToolPart} />
+              <ToolPartView part={part as ToolPart} {conversationId} />
             </div>
           {/if}
         {/each}
