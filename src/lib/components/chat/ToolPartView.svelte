@@ -9,12 +9,20 @@
     buildDiff,
   } from "./tool-body-helpers";
   import { adapters } from "$lib/stores/adapters.svelte";
+  import { moduleForToolName } from "$lib/modules/registry";
+  import { requestOpenPanel } from "$lib/modules/dock-actions";
+  import { getModuleState } from "$lib/modules/host";
 
   interface Props {
     part: ToolPart;
+    /** Lets a module tool's cockpit entry replay ITS OWN call (see
+     *  AppModule.restoreToolCall) instead of just re-opening the panel on
+     *  whatever a later call last showed. Omitted on surfaces with no real
+     *  conversation id yet (delegate runs, an un-promoted draft session). */
+    conversationId?: string;
   }
 
-  let { part }: Props = $props();
+  let { part, conversationId }: Props = $props();
 
   const toolName = $derived(part.type.replace(/^tool-/, ""));
 
@@ -105,14 +113,31 @@
   const { verb, detail } = $derived(summarizeToolCall(toolName, input));
 
   let expanded = $state(false);
+
+  // A module's own tool (namespaced `${moduleId}_...`, e.g. `fretboard_show`)
+  // opens that module's panel on click instead of toggling the generic JSON
+  // disclosure below — the panel IS the useful view for these.
+  const panelModule = $derived(moduleForToolName(toolName));
+
+  function handleHeaderClick() {
+    if (panelModule) {
+      if (panelModule.restoreToolCall && conversationId) {
+        const state = getModuleState(conversationId, panelModule);
+        panelModule.restoreToolCall(state, toolName, part.input);
+      }
+      requestOpenPanel(panelModule.id);
+      return;
+    }
+    expanded = !expanded;
+  }
 </script>
 
 <div class="tool-entry" data-testid="tool-entry" data-tool={toolName}>
   <button
     type="button"
     class="head"
-    onclick={() => (expanded = !expanded)}
-    aria-expanded={expanded}
+    onclick={handleHeaderClick}
+    aria-expanded={panelModule ? undefined : expanded}
     data-testid="tool-entry-head"
   >
     {#if toolName === "delegate_task"}

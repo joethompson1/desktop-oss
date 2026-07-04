@@ -41,6 +41,10 @@ export interface ModuleToolContext<S = unknown> {
   state: S;
   /** Expand / focus this module's panel in the right dock. */
   openPanel: () => void;
+  /** Persist this module's current state so it survives a reload — call
+   *  after mutating `state`. No-ops if the module doesn't implement
+   *  `serializeState`. Fire-and-forget (best-effort). */
+  persistState: () => void;
 }
 
 /** Context handed to `promptFragment(...)` while assembling the system
@@ -73,6 +77,26 @@ export interface AppModule {
   /** Per-conversation reactive state. MUST be created in a `.svelte.ts` file
    *  (runes-backed) so mutations from a tool propagate to the panel. */
   createState?: () => unknown;
+  /** Snapshot `state` into a JSON-serializable value for persistence.
+   *  Optional — a module without this stays memory-only (lost on reload),
+   *  which is the default and fine for state that's cheap to regenerate. */
+  serializeState?: (state: unknown) => unknown;
+  /** Apply a previously `serializeState`d snapshot onto a freshly created
+   *  `state` instance (mutate in place — the panel re-renders from this same
+   *  instance). Called once, lazily, the first time a conversation's state
+   *  is touched after a reload. Validate the snapshot shape before applying
+   *  it: it may have been written by an older version of the module. */
+  hydrateState?: (state: unknown, snapshot: unknown) => void;
+  /** Replay one historical call to one of this module's own tools (matched
+   *  by the `${id}_` naming convention) back onto the live `state` — called
+   *  when the user clicks that tool's cockpit entry in the chat transcript,
+   *  before its panel is opened/focused. Lets a module make an old tool
+   *  call's specific effect visible again, since `state` only ever holds
+   *  the LATEST call's result otherwise. Validate `input` before using it —
+   *  it's the tool call's original arguments, replayed as-is. Optional: a
+   *  module without this just re-opens/focuses the panel showing whatever
+   *  is currently in `state`. */
+  restoreToolCall?: (state: unknown, toolName: string, input: unknown) => void;
   /** Right-dock panel. */
   panel?: {
     title?: string;
@@ -100,6 +124,9 @@ export interface ModuleDefinition<S = void> {
   enabledByDefault?: boolean;
   defaultEnabled?: () => boolean | Promise<boolean>;
   createState?: () => S;
+  serializeState?: (state: S) => unknown;
+  hydrateState?: (state: S, snapshot: unknown) => void;
+  restoreToolCall?: (state: S, toolName: string, input: unknown) => void;
   panel?: {
     title?: string;
     component: Component<{ state: S; conversationId: string }>;

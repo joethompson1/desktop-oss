@@ -246,6 +246,7 @@
             messageId={msg.id}
             role="assistant"
             parts={msg.parts}
+            conversationId={sessionId}
           />
         {/if}
       {/each}
@@ -254,6 +255,7 @@
           role="assistant"
           parts={chat.pendingParts}
           streaming
+          conversationId={sessionId}
         />
       {/if}
     </div>
