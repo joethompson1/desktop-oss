@@ -1,9 +1,12 @@
 name: Claude Code Review
 
-# Auto-reviews every opened/updated PR. Auth is the CLAUDE_CODE_OAUTH_TOKEN
-# repo secret (see .github/workflows/claude.yml header for how to set it up).
-# The review prompt is tailored to this project's conventions; Claude also
-# reads CLAUDE.md and src/lib/modules/README.md for the full rules.
+# Multi-agent PR reviewer. On every opened/updated PR, a lead Claude (Sonnet 5)
+# fans out specialist sub-reviewers (one per lens), adversarially verifies each
+# finding, then posts inline comments and submits a review verdict.
+#
+# Auth: the CLAUDE_CODE_OAUTH_TOKEN repo secret (generate locally with
+# `claude setup-token`, needs Claude Pro/Max). The Claude GitHub App
+# (github.com/apps/claude) must be installed on the repo.
 
 on:
   pull_request:
@@ -22,7 +25,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: PR review with Claude
+      - name: Multi-agent PR review with Claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -31,31 +34,77 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request for desktop-oss — a local-first, modular
-            agent workspace (Tauri v2 + SvelteKit, Svelte 5 runes, TS strict).
-            Read CLAUDE.md and src/lib/modules/README.md first; they define the
-            project's conventions and are the bar to judge against.
+            You are the LEAD reviewer for this PR in desktop-oss — a local-first,
+            modular agent workspace (Tauri v2 + SvelteKit, Svelte 5 runes, TS
+            strict). Review it with the rigor of a demanding senior engineer:
+            correctness, architecture, security, and tests, AND the smaller
+            stuff — readability, naming, idiomatic style, nitpicks, and concrete
+            general improvements. Read CLAUDE.md and src/lib/modules/README.md
+            first; they define the conventions and are the bar to judge against.
 
-            Focus, in priority order:
-            1. Architecture conformance — the #1 rule is genericness through
-               modularity: a feature should be a drop-in module under
-               src/lib/modules/<id>/ wired via GENERIC seams, with NO
-               module-specific code in core files. Flag any module leaking into
-               core, or a core edit that should have been a generic seam. Keep
-               modules/{registry,host,integration,dock-actions}.ts free of
-               runes/UI/Tauri so the agent loop stays importable under the
-               node:test eval harness.
-            2. Correctness bugs — give a concrete repro (inputs → wrong result).
-               Watch for Svelte 5 runes misuse (runes only in
-               .svelte/.svelte.ts), and the local-first HTTP rule: LLM/provider
-               requests MUST use nativeFetch, never window.fetch.
-            3. Reuse / simplification, security, and test coverage. Note scope
-               creep (one concern per PR).
+            Run the review as a FAN-OUT, not a single pass:
 
-            Post inline comments on specific lines for concrete issues and a
-            single concise top-level summary ending with a clear merge
-            recommendation (approve / request changes) ranked by severity. Be
-            critical but precise — cite file:line and don't invent issues.
+            1) UNDERSTAND — run `gh pr view` and `gh pr diff` for the full diff,
+               changed files, and description.
+
+            2) FAN OUT — spawn one Task subagent per lens below, in parallel.
+               Give each the diff + its lens; each returns findings as
+               {severity: blocker|major|minor|nit, file, line, title, evidence
+               (a concrete repro / why it is wrong), fix}:
+                 A. Architecture & module-conformance — the #1 rule: features are
+                    drop-in modules wired via GENERIC seams, with NO
+                    module-specific code in core files;
+                    modules/{registry,host,integration,dock-actions}.ts stay
+                    runes/UI/Tauri-free (the agent loop must import under the
+                    node:test eval harness). Flag any leakage, or a core edit
+                    that should have been a generic seam.
+                 B. Correctness bugs — logic errors with a concrete repro (inputs
+                    → wrong output); Svelte 5 runes misuse (runes only in
+                    .svelte/.svelte.ts); the local-first HTTP rule (LLM/provider
+                    calls use nativeFetch, never window.fetch).
+                 C. UI / UX / styling & a11y — CSS-var usage (no Tailwind, no
+                    stray hex), keyboard/aria, colour-only cues, the cockpit +
+                    right-dock conventions.
+                 D. Security & the Rust/Tauri boundary — new commands /
+                    capabilities, unsafe input handling, secret exposure.
+                 E. Tests & scope — coverage of new logic with meaningful
+                    assertions, over-engineering, and scope creep (a PR should be
+                    one concern).
+                 F. Code quality / maintainability — readability, naming, dead
+                    code, error handling, comments, idiomatic Svelte/TS, and
+                    concrete general improvements a senior reviewer would raise.
+                    Nitpicks are wanted here.
+
+            3) VERIFY (do not skip) — for EACH finding, spawn a skeptic Task
+               subagent that re-reads the actual code and returns
+               confirmed | refuted | partial with reasoning. Drop refuted
+               findings and correct inflated severities. Never post an unverified
+               finding.
+
+            4) POST — for EVERY confirmed finding (all severities, including
+               minors, nits, and general improvements):
+                 • post an INLINE comment on its exact file+line via the
+                   inline-comment tool, prefixed with severity, e.g.
+                   "**[major]** …", "**[nit]** …", each with the reason and a
+                   concrete suggested fix.
+               Then submit ONE review as the verdict, using the PR number above:
+                 • if ANY confirmed finding is a blocker:
+                     gh pr review <PR NUMBER> --request-changes --body "<summary>"
+                 • otherwise:
+                     gh pr review <PR NUMBER> --comment --body "<summary>"
+               If GitHub rejects the review event, fall back to
+               `gh pr comment <PR NUMBER> --body "<summary>"`.
+               The summary: a 2–3 sentence overall read, the confirmed findings
+               grouped by severity (counts + one-liners), and the merge
+               recommendation.
+
+            Do NOT post praise — keep the PR focused on what to change. Cite
+            file:line, give concrete repros, and invent nothing. If the PR is
+            genuinely clean, submit a --comment review saying so. Prefer precise,
+            high-confidence findings, but an honest senior dev's nitpicks and
+            improvement suggestions ARE wanted.
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-sonnet-5
+            --max-turns 60
+            --allowedTools "Task,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr comment:*),Bash(git diff:*),Bash(git log:*),mcp__github_inline_comment__create_inline_comment"
