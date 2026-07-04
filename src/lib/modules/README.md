@@ -150,7 +150,7 @@ raw `invoke` access.
 
 ## Conventions & rules
 
-1. **Namespace tool names** with the module id (`fretboard_set`, not `set`) to
+1. **Namespace tool names** with the module id (`fretboard_show`, not `show`) to
    avoid collisions with built-in tools or other modules. This also makes a
    tool's cockpit entry in chat open the module's panel on click, instead of
    the generic JSON disclosure (`registry.ts`'s `moduleForToolName` matches
