@@ -24,3 +24,10 @@ src/lib/agent/evals/fixtures/snapshots/*.ts
 # Logs
 *.log
 npm-debug.log*
+
+# Local git-hook tooling — personal worktree bootstrap, not shared. The hook
+# itself lives in .git/hooks/ (never tracked); these helper scripts are kept
+# untracked so they exist for the hook without being committed to the repo.
+/scripts/hooks/
+/scripts/setup-worktree.sh
+/scripts/install-git-hooks.mjs
