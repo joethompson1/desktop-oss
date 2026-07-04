@@ -26,7 +26,13 @@
   // Right dock: only on routes that carry a conversation id, and only once at
   // least one enabled module contributes a panel. With no modules it never
   // shows and `main` keeps its full width.
-  const conversationId = $derived(page.params.id ?? "");
+  //
+  // Deliberately `ui.activeConversationId`, not `page.params.id`: a draft
+  // session promoted via `replaceState` (sessions/new's onConversationCreated)
+  // changes the URL's matched route WITHOUT a real navigation, and this
+  // already-mounted root layout never sees that route/param change reflected
+  // in `page` — see ui.svelte.ts for how this store is kept in sync instead.
+  const conversationId = $derived(ui.activeConversationId);
   const dockActive = $derived(
     showShell && conversationId !== "" && modules.panels().length > 0,
   );
