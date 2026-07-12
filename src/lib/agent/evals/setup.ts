@@ -39,8 +39,8 @@ export function installEvalMocks(): void {
     },
   });
 
-  // plugin-store is pulled in by adapters/index.ts (credential storage).
-  // We don't import adapters/index in evals — the orchestrator model is
+  // plugin-store is pulled in by harnesses/index.ts (credential storage).
+  // We don't import harnesses/index in evals — the orchestrator model is
   // built explicitly by the scenario — but stub it defensively in case
   // a future scenario imports something that transitively needs it.
   mock.module("@tauri-apps/plugin-store", {

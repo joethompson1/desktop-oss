@@ -1,4 +1,4 @@
-// AnthropicAdapter — talks to api.anthropic.com via either an API key
+// AnthropicHarness — talks to api.anthropic.com via either an API key
 // (sk-ant-...) or an OAuth bearer token cached by Claude Code in ~/.claude/.
 // Both modes use the same /v1/messages wire format; only the auth header
 // and the additional beta headers differ.
@@ -15,13 +15,13 @@ import {
   type NativeFetchResponse,
 } from "./native-fetch";
 import type {
-  AdapterConfig,
+  HarnessConfig,
   ChatMessage,
-  LLMAdapter,
+  LLMHarness,
   ProbeResult,
   StreamChatParams,
   ToolDefinition,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import { parseSSEStream } from "./sse";
 import { getValidClaudeCodeCredentials } from "./claude-code-auth";
@@ -73,7 +73,7 @@ function emptyUsage() {
   };
 }
 
-export interface AnthropicAdapterDeps {
+export interface AnthropicHarnessDeps {
   /** Resolves the API key when `authMode === 'api-key'`. */
   getApiKey?: () => Promise<string | null>;
 }
@@ -98,14 +98,14 @@ type AnthropicContentBlock =
       is_error?: boolean;
     };
 
-export class AnthropicAdapter implements LLMAdapter {
+export class AnthropicHarness implements LLMHarness {
   readonly type = "anthropic" as const;
   readonly id: string;
   readonly name: string;
-  readonly config: AdapterConfig;
-  readonly #deps: AnthropicAdapterDeps;
+  readonly config: HarnessConfig;
+  readonly #deps: AnthropicHarnessDeps;
 
-  constructor(config: AdapterConfig, deps: AnthropicAdapterDeps = {}) {
+  constructor(config: HarnessConfig, deps: AnthropicHarnessDeps = {}) {
     this.id = config.id;
     this.name = config.name;
     this.config = config;
@@ -247,7 +247,7 @@ export class AnthropicAdapter implements LLMAdapter {
     yield emptyFinish();
   }
 
-  /** Verify the adapter has usable credentials. We deliberately do NOT
+  /** Verify the harness has usable credentials. We deliberately do NOT
    *  hit api.anthropic.com here:
    *
    *  - The cheapest endpoint that requires auth (`POST /v1/messages` with
@@ -294,7 +294,7 @@ export class AnthropicAdapter implements LLMAdapter {
       const creds = await getValidClaudeCodeCredentials();
       if (!creds.hasCredentials || !creds.accessToken) {
         throw new Error(
-          "No Claude Code account login found. Run `claude auth login` first, or switch this adapter to API key mode.",
+          "No Claude Code account login found. Run `claude auth login` first, or switch this harness to API key mode.",
         );
       }
       headers.Authorization = `Bearer ${creds.accessToken}`;
@@ -318,7 +318,7 @@ export class AnthropicAdapter implements LLMAdapter {
       const apiKey = await this.#deps.getApiKey?.();
       if (!apiKey) {
         throw new Error(
-          `No API key configured for adapter "${this.name}". Add one in Settings.`,
+          `No API key configured for harness "${this.name}". Add one in Settings.`,
         );
       }
       headers["x-api-key"] = apiKey;
@@ -349,7 +349,7 @@ export class AnthropicAdapter implements LLMAdapter {
 
     return {
       // Per-call override (from `StreamChatParams.model`) wins over the
-      // adapter's configured default — lets the orchestrator pick a
+      // harness's configured default — lets the orchestrator pick a
       // different Claude variant per delegate spawn.
       model: params.model ?? this.config.model ?? DEFAULT_MODEL,
       max_tokens: params.maxTokens ?? 4096,

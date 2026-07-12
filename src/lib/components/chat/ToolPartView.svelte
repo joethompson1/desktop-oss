@@ -8,7 +8,7 @@
     stringInput,
     buildDiff,
   } from "./tool-body-helpers";
-  import { adapters } from "$lib/stores/adapters.svelte";
+  import { harnesses } from "$lib/stores/harnesses.svelte";
   import { moduleForToolName } from "$lib/modules/registry";
   import { requestOpenPanel } from "$lib/modules/dock-actions";
   import { getModuleState, markModuleStateTouched } from "$lib/modules/host";
@@ -64,13 +64,13 @@
   );
 
   // delegate_task: structured DelegateResult unwrap.
-  const delegateAdapter = $derived.by<
+  const delegateHarness = $derived.by<
     { id: string; name: string; type: string } | null
   >(() => {
     if (toolName !== "delegate_task") return null;
-    const a = outputObj?.adapter;
-    if (a && typeof a === "object") {
-      return a as { id: string; name: string; type: string };
+    const h = outputObj?.harness;
+    if (h && typeof h === "object") {
+      return h as { id: string; name: string; type: string };
     }
     return null;
   });
@@ -96,16 +96,16 @@
   );
 
   // Best-guess agent name while the delegate is running — pulled from the
-  // configured delegate adapter. Once the run finishes we switch to the
-  // adapter the result actually carries (so e.g. fallback-to-orchestrator
+  // configured delegate harness. Once the run finishes we switch to the
+  // harness the result actually carries (so e.g. fallback-to-orchestrator
   // is visible).
-  const runningAdapterName = $derived(
-    adapters.delegateConfig?.name ?? "delegate",
+  const runningHarnessName = $derived(
+    harnesses.delegateConfig?.name ?? "delegate",
   );
   const delegateLabel = $derived.by(() => {
     if (toolName !== "delegate_task") return null;
-    if (awaiting) return `Launching ${runningAdapterName} delegate`;
-    if (delegateAdapter) return `Launched ${delegateAdapter.name} delegate`;
+    if (awaiting) return `Launching ${runningHarnessName} delegate`;
+    if (delegateHarness) return `Launched ${delegateHarness.name} delegate`;
     return "Launched delegate";
   });
 
@@ -179,9 +179,9 @@
       {#if toolName === "delegate_task"}
         {@const task = stringInput(input, "task")}
         {@const context = stringInput(input, "context")}
-        {#if delegateAdapter}
+        {#if delegateHarness}
           <div class="sub-caption">
-            ran on <code>{delegateAdapter.name}</code> ({delegateAdapter.type}){#if delegateDuration}
+            ran on <code>{delegateHarness.name}</code> ({delegateHarness.type}){#if delegateDuration}
               · {delegateDuration}
             {/if}
           </div>

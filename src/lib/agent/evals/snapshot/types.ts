@@ -4,7 +4,7 @@
 
 import type { UIChatTurn } from "$lib/types/chat";
 import type { ChunkRow, RunSummary } from "$lib/types/run";
-import type { AdapterConfig } from "$lib/types/adapter";
+import type { HarnessConfig } from "$lib/types/harness";
 
 export interface CapturedSnapshot {
   capturedAt: string;
@@ -21,11 +21,11 @@ export interface CapturedSnapshot {
    *  `null` means "use the default prompt". */
   orchestratorPromptOverride: string | null;
   delegatePromptOverride: string | null;
-  /** Adapter configs as captured from settings, with credentials stripped.
+  /** Harness configs as captured from settings, with credentials stripped.
    *  Used to reconstruct the "Available delegates" roster the model saw. */
-  adapterConfigs: AdapterConfig[];
+  harnessConfigs: HarnessConfig[];
   /** Recorded delegate outputs keyed by canonicalised delegate_task input.
-   *  When the orchestrator delegates during replay, the mock adapter
+   *  When the orchestrator delegates during replay, the mock harness
    *  returns the recorded result instead of contacting an external model. */
   recordedDelegateResponses: Record<string, RecordedDelegateResponse>;
 }
@@ -37,8 +37,8 @@ export interface RecordedDelegateResponse {
   status: RunSummary["status"];
   filesChanged: string[];
   durationMs: number;
-  adapterName: string | null;
-  adapterType: string | null;
+  harnessName: string | null;
+  harnessType: string | null;
 }
 
 export interface CaptureOptions {

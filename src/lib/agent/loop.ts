@@ -8,7 +8,7 @@
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
 
-import type { AdapterConfig, AdapterType, LLMAdapter } from "$lib/types/adapter";
+import type { HarnessConfig, HarnessType, LLMHarness } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import { loadMessages } from "$lib/db/conversations";
 import { listRuns } from "$lib/db/runs";
@@ -19,7 +19,7 @@ import {
   CODEX_MODEL_PRESETS,
   CURSOR_MODEL_PRESETS,
   type ModelPreset,
-} from "$lib/adapters/presets";
+} from "$lib/harnesses/presets";
 
 import {
   decideDeferral,
@@ -50,19 +50,19 @@ export interface OrchestratorTurnInput {
   userMessage: string;
   attachments?: Array<{ filename: string; mediaType: string; sizeBytes: number }>;
   /** The orchestrator model, built once by the caller (see
-   *  `buildOrchestratorModel` in `$lib/adapters`). */
+   *  `buildOrchestratorModel` in `$lib/harnesses`). */
   orchestratorModel: LanguageModelV3;
   /** True when the orchestrator model is an Anthropic provider. Gates the
    *  deferred-tool-loading mechanism (Anthropic-specific). */
   isAnthropic: boolean;
-  /** Resolve a delegate adapter. Called once per `delegate_task` tool call —
-   *  passes the optional `adapter` field from the tool input so the
+  /** Resolve a delegate harness. Called once per `delegate_task` tool call —
+   *  passes the optional `harness` field from the tool input so the
    *  orchestrator can route different tasks to different delegates. Returns
    *  null when no usable delegate is configured. */
-  resolveDelegateAdapter: (preferredName?: string) => LLMAdapter | null;
+  resolveDelegateHarness: (preferredName?: string) => LLMHarness | null;
   /** Configs known to the orchestrator, used to build the "Available
    *  delegates" roster in the system prompt. */
-  delegateRosterConfigs: AdapterConfig[];
+  delegateRosterConfigs: HarnessConfig[];
   /** Optional callback fired before each LLM step inside the turn.
    *  Lets the caller inject extra user-role messages into the next
    *  step's input — used today by the orchestrator chat store to
@@ -79,14 +79,14 @@ export interface OrchestratorTurnInput {
   signal?: AbortSignal;
 }
 
-/** Per-adapter-type catalog of swappable models the orchestrator can
+/** Per-harness-type catalog of swappable models the orchestrator can
  *  pick via `delegate_task`'s `model` field. Returns an empty array
- *  for adapter types where the model is bound at configure-time and
+ *  for harness types where the model is bound at configure-time and
  *  not meaningfully overridable per call (anthropic + openai-compatible
  *  expose lots of models too, but the per-delegation override fits
- *  better for the agentic adapters where the same adapter can route
+ *  better for the agentic harnesses where the same harness can route
  *  through different models for different sub-tasks). */
-function availableModelsFor(type: AdapterType): ModelPreset[] {
+function availableModelsFor(type: HarnessType): ModelPreset[] {
   switch (type) {
     case "anthropic":
       return ANTHROPIC_MODEL_PRESETS;
@@ -101,16 +101,16 @@ function availableModelsFor(type: AdapterType): ModelPreset[] {
   }
 }
 
-/** Build a markdown roster of delegate-capable adapters the orchestrator
+/** Build a markdown roster of delegate-capable harnesses the orchestrator
  *  can route to. Appended to the system prompt at call time so the model
- *  sees the current configuration (a new adapter is visible without an
+ *  sees the current configuration (a new harness is visible without an
  *  app restart). */
-function buildDelegateRoster(configs: AdapterConfig[]): string {
+function buildDelegateRoster(configs: HarnessConfig[]): string {
   if (configs.length === 0) return "";
   const lines: string[] = [];
   lines.push("## Available delegates");
   lines.push(
-    "Use the `delegate_task` tool's `adapter` field with one of the names below to route a task to a specific delegate. Omit `adapter` to use the default. Pass `model` to override the adapter's configured default model for a single call — useful when the same adapter can route through different models for different kinds of work.",
+    "Use the `delegate_task` tool's `harness` field with one of the names below to route a task to a specific delegate. Omit `harness` to use the default. Pass `model` to override the harness's configured default model for a single call — useful when the same harness can route through different models for different kinds of work.",
   );
   for (const cfg of configs) {
     const tags: string[] = [];
@@ -217,7 +217,7 @@ export async function* streamOrchestratorTurn(
     .join("\n\n");
 
   const orchestratorTools = getOrchestratorTools({
-    resolveDelegateAdapter: input.resolveDelegateAdapter,
+    resolveDelegateHarness: input.resolveDelegateHarness,
     conversationId: input.conversationId,
     workingDirectory: input.workingDirectory,
     signal: input.signal,

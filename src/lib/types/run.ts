@@ -29,21 +29,21 @@ export interface RunSummary {
   name?: string;
   title: string;
   status: RunStatus;
-  delegateAdapterId?: string;
+  delegateHarnessId?: string;
   delegateType?: string;
   exitCode?: number;
   summary?: string;
   /** Rolling compressed summary of conversation turns older than the last
    *  CONTEXT_TAIL messages. Null until the run exceeds SUMMARY_THRESHOLD
    *  messages. Prepended as synthetic prior context when continuing a run
-   *  to keep adapter calls within a predictable token budget. */
+   *  to keep harness calls within a predictable token budget. */
   contextSummary?: string;
-  /** Adapter-provided opaque session token captured on the first turn,
+  /** Harness-provided opaque session token captured on the first turn,
    *  passed back as `resumeSessionId` on continuation. Set by the
-   *  claude-code adapter (SDK's `session_id`) and the codex adapter
-   *  (`threadId` from the MCP `codex` tool). Raw-LLM adapters leave
+   *  claude-code harness (SDK's `session_id`) and the codex harness
+   *  (`threadId` from the MCP `codex` tool). Raw-LLM harnesses leave
    *  this undefined. */
-  adapterSessionId?: string;
+  harnessSessionId?: string;
   filesChanged?: string[];
   createdAt: string;
   completedAt?: string;
@@ -65,10 +65,10 @@ export interface DelegateResult {
   filesChanged: string[];
   exitCode?: number;
   durationMs: number;
-  /** Which adapter actually executed this run. Surfaced in the UI so it's
+  /** Which harness actually executed this run. Surfaced in the UI so it's
    *  unambiguous whether the delegate landed on the configured local model
-   *  or fell back to the orchestrator adapter. */
-  adapter?: {
+   *  or fell back to the orchestrator harness. */
+  harness?: {
     id: string;
     name: string;
     type: string;

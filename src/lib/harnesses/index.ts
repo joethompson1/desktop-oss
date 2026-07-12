@@ -1,9 +1,9 @@
-// Adapter registry — instantiates a concrete LLMAdapter from a config row.
-// Credential lookup is wired through here so every adapter consistently
-// pulls its API key from the same per-adapter keystore.
+// Harness registry — instantiates a concrete LLMHarness from a config row.
+// Credential lookup is wired through here so every harness consistently
+// pulls its API key from the same per-harness keystore.
 //
 // Two parallel surfaces live here:
-//   - `createAdapter` — returns our internal LLMAdapter. Used by the
+//   - `createHarness` — returns our internal LLMHarness. Used by the
 //     delegate runner where we hand-roll the loop.
 //   - `buildOrchestratorModel` — returns a Vercel AI SDK LanguageModelV3.
 //     Used by the orchestrator loop, which delegates multi-step bookkeeping
@@ -13,14 +13,14 @@ import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
-import type { AdapterConfig, LLMAdapter } from "$lib/types/adapter";
-import { AnthropicAdapter } from "./anthropic";
+import type { HarnessConfig, LLMHarness } from "$lib/types/harness";
+import { AnthropicHarness } from "./anthropic";
 import { buildAnthropicLanguageModel } from "./anthropic-ai-sdk";
-import { ClaudeCodeSDKAdapter } from "./claude-code-sdk";
-import { CodexAdapter } from "./codex-mcp";
-import { CursorAdapter } from "./cursor";
+import { ClaudeCodeSDKHarness } from "./claude-code-sdk";
+import { CodexHarness } from "./codex-mcp";
+import { CursorHarness } from "./cursor";
 import { nativeFetchAsFetch } from "./native-fetch";
-import { OpenAICompatibleAdapter } from "./openai-compatible";
+import { OpenAICompatibleHarness } from "./openai-compatible";
 
 const CREDS_FILE = "credentials.json";
 
@@ -30,71 +30,77 @@ function getCredStore(): LazyStore {
   return credStore;
 }
 
-function credKey(adapterId: string): string {
-  return `adapter:${adapterId}:apiKey`;
+// Key format kept as `adapter:<id>:apiKey` (not `harness:...`) for
+// backward compatibility — existing installs already have API keys
+// stored under this key in the credentials store, and there is no
+// migration path for a LazyStore-backed keychain entry the way there is
+// for a SQLite settings row. Renaming this string would silently drop
+// every existing user's saved API keys.
+function credKey(harnessId: string): string {
+  return `adapter:${harnessId}:apiKey`;
 }
 
-export async function getAdapterApiKey(
-  adapterId: string,
+export async function getHarnessApiKey(
+  harnessId: string,
 ): Promise<string | null> {
   try {
-    return (await getCredStore().get<string>(credKey(adapterId))) ?? null;
+    return (await getCredStore().get<string>(credKey(harnessId))) ?? null;
   } catch {
     return null;
   }
 }
 
-export async function setAdapterApiKey(
-  adapterId: string,
+export async function setHarnessApiKey(
+  harnessId: string,
   apiKey: string,
 ): Promise<void> {
   const store = getCredStore();
-  await store.set(credKey(adapterId), apiKey);
+  await store.set(credKey(harnessId), apiKey);
   await store.save();
 }
 
-export async function clearAdapterApiKey(adapterId: string): Promise<void> {
+export async function clearHarnessApiKey(harnessId: string): Promise<void> {
   const store = getCredStore();
-  await store.delete(credKey(adapterId));
+  await store.delete(credKey(harnessId));
   await store.save();
 }
 
-export function createAdapter(config: AdapterConfig): LLMAdapter {
+export function createHarness(config: HarnessConfig): LLMHarness {
   switch (config.type) {
     case "anthropic":
-      return new AnthropicAdapter(config, {
-        getApiKey: () => getAdapterApiKey(config.id),
+      return new AnthropicHarness(config, {
+        getApiKey: () => getHarnessApiKey(config.id),
       });
     case "openai-compatible":
-      return new OpenAICompatibleAdapter(config, {
-        getApiKey: () => getAdapterApiKey(config.id),
+      return new OpenAICompatibleHarness(config, {
+        getApiKey: () => getHarnessApiKey(config.id),
       });
     case "claude-code":
-      return new ClaudeCodeSDKAdapter(config);
+      return new ClaudeCodeSDKHarness(config);
     case "codex":
-      return new CodexAdapter(config);
+      return new CodexHarness(config);
     case "cursor":
-      return new CursorAdapter(config, {
-        getApiKey: () => getAdapterApiKey(config.id),
+      return new CursorHarness(config, {
+        getApiKey: () => getHarnessApiKey(config.id),
       });
     default: {
       const exhaustive: never = config.type;
-      throw new Error(`Unknown adapter type: ${String(exhaustive)}`);
+      throw new Error(`Unknown harness type: ${String(exhaustive)}`);
     }
   }
 }
 
 export {
-  AnthropicAdapter,
-  ClaudeCodeSDKAdapter,
-  CodexAdapter,
-  CursorAdapter,
-  OpenAICompatibleAdapter,
+  AnthropicHarness,
+  ClaudeCodeSDKHarness,
+  CodexHarness,
+  CursorHarness,
+  OpenAICompatibleHarness,
 };
 
 /**
  * Build a Vercel AI SDK `LanguageModelV3` for the orchestrator. Returns
- * null when the adapter is delegate-only (Claude Code, Codex) — those
+ * null when the harness is delegate-only (Claude Code, Codex) — those
  * run their own internal agent loops and don't expose a
  * tool-definitions-in / typed-JSON-events-out protocol that the
  * Vercel AI SDK can drive.
@@ -103,15 +109,15 @@ export {
  * error rather than producing a silently-broken model.
  */
 export async function buildOrchestratorModel(
-  config: AdapterConfig,
+  config: HarnessConfig,
 ): Promise<LanguageModelV3 | null> {
   switch (config.type) {
     case "anthropic":
       return buildAnthropicLanguageModel(config, {
-        getApiKey: () => getAdapterApiKey(config.id).then((k) => k ?? undefined),
+        getApiKey: () => getHarnessApiKey(config.id).then((k) => k ?? undefined),
       });
     case "openai-compatible": {
-      const apiKey = await getAdapterApiKey(config.id);
+      const apiKey = await getHarnessApiKey(config.id);
       const provider = createOpenAI({
         baseURL: config.baseUrl,
         // Some OpenAI-compatible endpoints (Ollama, LM Studio) accept any
@@ -129,7 +135,7 @@ export async function buildOrchestratorModel(
       return null;
     default: {
       const exhaustive: never = config.type;
-      throw new Error(`Unknown adapter type: ${String(exhaustive)}`);
+      throw new Error(`Unknown harness type: ${String(exhaustive)}`);
     }
   }
 }

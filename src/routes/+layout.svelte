@@ -16,7 +16,7 @@
 
   let { children } = $props();
 
-  // Shell is hidden only when the user hasn't configured any adapter yet
+  // Shell is hidden only when the user hasn't configured any harness yet
   // (we want to surface the settings page front-and-centre on first run).
   const showShell = $derived(auth.hasToken);
   const onCockpitRoute = $derived(

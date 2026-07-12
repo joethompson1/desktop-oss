@@ -6,11 +6,11 @@
   import type { RunSummary } from "$lib/types/run";
   import { chunksToChatTurns } from "$lib/agent/run-chunks-to-turns";
   import { streamDelegateContinue } from "$lib/agent/delegate";
-  import { adapters } from "$lib/stores/adapters.svelte";
+  import { harnesses } from "$lib/stores/harnesses.svelte";
   import { ChatStore } from "$lib/stores/chat-store.svelte";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
-  import { adapterToSourceFamily } from "$lib/skills/adapter-family";
-  import type { AdapterType } from "$lib/types/adapter";
+  import { harnessToSourceFamily } from "$lib/skills/harness-family";
+  import type { HarnessType } from "$lib/types/harness";
 
   // One ChatStore per page mount — bound to this specific run. Same class
   // the orchestrator chat uses; only loadHistory + send differ.
@@ -35,7 +35,7 @@
         return streamDelegateContinue({
           runId,
           userMessage: modelInputText,
-          resolveDelegateAdapter: () => adapters.resolveDelegate(),
+          resolveDelegateHarness: () => harnesses.resolveDelegate(),
         });
       },
     }),
@@ -139,10 +139,10 @@
     return `${Math.round(ms / 100) / 10}s`;
   });
   const composerPlaceholder = $derived(
-    `Talk to ${adapters.delegateConfig?.name ?? "the delegate"}…`,
+    `Talk to ${harnesses.delegateConfig?.name ?? "the delegate"}…`,
   );
   const skillSourceFilter = $derived(
-    adapterToSourceFamily(run?.delegateType as AdapterType | undefined),
+    harnessToSourceFamily(run?.delegateType as HarnessType | undefined),
   );
 </script>
 
@@ -159,7 +159,7 @@
     {#if run}
       <span class="title" title={run.title}>{run.title}</span>
       {#if run.delegateType}
-        <span class="adapter">via <code>{run.delegateType}</code></span>
+        <span class="harness">via <code>{run.delegateType}</code></span>
       {/if}
       {#if durationLabel}
         <span class="duration">{durationLabel}</span>
@@ -219,11 +219,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .adapter {
+  .harness {
     color: var(--text-muted);
     font-size: 0.85em;
   }
-  .adapter code {
+  .harness code {
     font-family: var(--code-mono);
     color: var(--text);
     background: var(--code-inline-bg);

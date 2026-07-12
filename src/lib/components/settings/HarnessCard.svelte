@@ -1,32 +1,32 @@
 <script lang="ts">
-  // Shared adapter row — one card per configured adapter. Owns its own
+  // Shared harness row — one card per configured harness. Owns its own
   // per-row edit state (API key visibility, defaults-editor toggle, drafts)
   // and emits commits back to the parent via callback props. The parent
-  // (`/settings/+page.svelte`) only handles the cross-adapter operations
+  // (`/settings/+page.svelte`) only handles the cross-harness operations
   // (delete, mark-as-orchestrator, mark-as-delegate).
   //
   // Per-type rendering lives inside the card via conditional blocks rather
   // than per-type sub-components. The chrome (badge, name, role chips,
-  // delete button, action buttons) is identical for every adapter and the
+  // delete button, action buttons) is identical for every harness and the
   // type-specific blocks (Anthropic auth radio, Codex profile+sandbox,
   // model dropdown) are short enough that splitting them across files
   // costs more in discoverability than it saves in line count.
   import {
     isDelegateOnlyType,
-    type AdapterConfig,
+    type HarnessConfig,
     type AnthropicAuthMode,
-  } from "$lib/types/adapter";
+  } from "$lib/types/harness";
   import {
     CLAUDE_CODE_MODEL_PRESETS,
     CODEX_MODEL_PRESETS,
     CURSOR_MODEL_PRESETS,
     type ModelPreset,
-  } from "$lib/adapters/presets";
+  } from "$lib/harnesses/presets";
 
   interface Props {
-    cfg: AdapterConfig;
+    cfg: HarnessConfig;
     accountInfo: { has: boolean; email: string | null } | null;
-    onUpdate: (next: AdapterConfig) => void | Promise<void>;
+    onUpdate: (next: HarnessConfig) => void | Promise<void>;
     onDelete: () => void | Promise<void>;
     onSetOrchestrator: () => void | Promise<void>;
     onSetDelegate: () => void | Promise<void>;
@@ -61,16 +61,16 @@
   >("danger-full-access");
   // Free-text "role / strengths" hint — flows into the orchestrator's
   // system prompt as the description for this delegate. Lets the user
-  // tell the orchestrator what this adapter is best for in *their*
+  // tell the orchestrator what this harness is best for in *their*
   // setup ("good at tests", "fast local model — use for mechanical
   // edits", etc.).
   let descriptionDraft = $state("");
 
-  /** Which preset list — if any — is editable for this adapter's
+  /** Which preset list — if any — is editable for this harness's
    *  "default model" dropdown. Anthropic and openai-compatible use
-   *  provider-tied dropdowns set on the new-adapter form; we don't
-   *  re-render those here. The agentic adapters share one shape. */
-  function presetsFor(type: AdapterConfig["type"]): ModelPreset[] {
+   *  provider-tied dropdowns set on the new-harness form; we don't
+   *  re-render those here. The agentic harnesses share one shape. */
+  function presetsFor(type: HarnessConfig["type"]): ModelPreset[] {
     switch (type) {
       case "claude-code":
         return CLAUDE_CODE_MODEL_PRESETS;
@@ -84,12 +84,12 @@
   }
 
   const presetList = $derived<ModelPreset[]>(presetsFor(cfg.type));
-  /** True when the adapter type exposes a default-model dropdown.
-   *  Anthropic and OpenAI-compatible adapters bind their model at
-   *  create time via provider/preset pickers in the new-adapter form;
+  /** True when the harness type exposes a default-model dropdown.
+   *  Anthropic and OpenAI-compatible harnesses bind their model at
+   *  create time via provider/preset pickers in the new-harness form;
    *  they don't get a post-create model editor here. */
   const showModelEditor = $derived(presetList.length > 0);
-  // API key UI applies to any adapter that needs a user-supplied key.
+  // API key UI applies to any harness that needs a user-supplied key.
   // Claude Code and Codex authenticate via their own native flows
   // (Claude Code keychain, codex login) — no key field on those.
   const showApiKeyUI = $derived(
@@ -98,7 +98,7 @@
       (cfg.type === "anthropic" && cfg.authMode === "api-key"),
   );
 
-  function defaultLabel(type: AdapterConfig["type"]): string {
+  function defaultLabel(type: HarnessConfig["type"]): string {
     if (type === "codex") return "profile default";
     if (type === "claude-code") return "Claude Code default";
     if (type === "cursor") return "Cursor default";
@@ -128,7 +128,7 @@
           ? modelCustomDraft.trim() || undefined
           : undefined;
     const trimmedDescription = descriptionDraft.trim();
-    const next: AdapterConfig = {
+    const next: HarnessConfig = {
       ...cfg,
       model,
       description: trimmedDescription || undefined,
@@ -158,9 +158,9 @@
   }
 </script>
 
-<div class="adapter">
-  <div class="adapter-head">
-    <div class="adapter-title">
+<div class="harness">
+  <div class="harness-head">
+    <div class="harness-title">
       <span class="badge">{cfg.type}</span>
       <span class="name">{cfg.name}</span>
       {#if cfg.isOrchestratorDefault}
@@ -245,7 +245,7 @@
         role / strengths
         <textarea
           rows="3"
-          placeholder="What is this adapter best at? The orchestrator reads this when picking a delegate."
+          placeholder="What is this harness best at? The orchestrator reads this when picking a delegate."
           bind:value={descriptionDraft}
         ></textarea>
       </label>
@@ -359,14 +359,14 @@
     {#if !cfg.isDelegateDefault && !cfg.isOrchestratorDefault}
       <button
         onclick={() => void onSetDelegate()}
-        title="Sets this adapter as the orchestrator's fallback when it doesn't pick a specific delegate by name. Every adapter here is already available as a delegate the orchestrator can call by name."
+        title="Sets this harness as the orchestrator's fallback when it doesn't pick a specific delegate by name. Every harness here is already available as a delegate the orchestrator can call by name."
       >Make default delegate</button>
     {/if}
   </div>
 </div>
 
 <style>
-  .adapter {
+  .harness {
     padding: 0.9em 1em;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -375,12 +375,12 @@
     flex-direction: column;
     gap: 0.5em;
   }
-  .adapter-head {
+  .harness-head {
     display: flex;
     align-items: center;
     gap: 0.6em;
   }
-  .adapter-title {
+  .harness-title {
     flex: 1;
     display: flex;
     align-items: center;
@@ -423,7 +423,7 @@
     background: var(--bg);
     border-color: var(--accent);
   }
-  /* Other delegate-eligible adapters — orchestrator can route to them
+  /* Other delegate-eligible harnesses — orchestrator can route to them
    * by name. Subdued so the singular default reads as primary. */
   .role.role-delegate-available {
     color: var(--text-muted);

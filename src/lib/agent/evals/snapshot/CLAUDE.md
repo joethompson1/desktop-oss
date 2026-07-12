@@ -43,10 +43,10 @@ Fixture files land in `src/lib/agent/evals/fixtures/snapshots/` and are
   fake conversation (typically `orchestrator-main`).
 - `snapshotRecordedResponses` — map from `stableHash(brief)` → recorded
   delegate output. When the orchestrator calls `delegate_task` during
-  replay, the mock adapter looks up the brief and replays what the real
+  replay, the mock harness looks up the brief and replays what the real
   delegate said at capture time. New / unmatched briefs fall back to the
   mock's default reply.
-- `snapshotAdapterConfigs` — sanitised adapter configs (no API keys) for
+- `snapshotHarnessConfigs` — sanitised harness configs (no API keys) for
   the "Available delegates" roster in the system prompt.
 - `snapshotMetadata` — timestamps and counts for sanity checks.
 

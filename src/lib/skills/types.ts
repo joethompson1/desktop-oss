@@ -26,7 +26,7 @@ export interface Skill {
    *  `['Bash(git add)', 'Bash(git commit)']`). Advisory in Phase 1. */
   allowedTools: string[];
   context: "inline" | "fork";
-  /** When context==='fork', adapter `name` to dispatch to. Resolved
+  /** When context==='fork', harness `name` to dispatch to. Resolved
    *  at invocation time; falls back to the default delegate. */
   agent?: string;
   /** Conditional skills — gitignore-style globs. Hidden from the

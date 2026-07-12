@@ -1,4 +1,4 @@
-// Settings table acts as a JSON key/value store for adapter configs,
+// Settings table acts as a JSON key/value store for harness configs,
 // system prompts, and any other small preferences.
 
 import { getDb } from "./client";

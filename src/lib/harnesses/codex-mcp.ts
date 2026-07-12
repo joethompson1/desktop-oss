@@ -1,11 +1,11 @@
-// Codex adapter — drives `codex mcp-server` over JSON-RPC.
+// Codex harness — drives `codex mcp-server` over JSON-RPC.
 //
 // Codex (OpenAI's coding agent CLI) ships an MCP server mode that
 // exposes two tools — `codex` (run a fresh session) and `codex-reply`
 // (continue an existing one) — both of which run codex's full agent
 // loop server-side and stream `codex/event` progress notifications
 // back as the model produces output. We hold one long-lived
-// subprocess per adapter instance, multiplex tools/call requests over
+// subprocess per harness instance, multiplex tools/call requests over
 // it via McpStdioClient, and translate `codex/event` notifications
 // into our standard ChatStreamPart events.
 //
@@ -13,8 +13,8 @@
 //   - One long-lived process across many delegate runs (no spawn cost
 //     per task).
 //   - Native conversation threading via `threadId` returned by the
-//     `codex` tool — we persist it as adapter_session_id and pass it
-//     to `codex-reply` on continuation.
+//     `codex` tool — we persist it as the run's harness session id and
+//     pass it to `codex-reply` on continuation.
 //   - Concurrent runs over the same server (multiplexed by JSON-RPC
 //     request id).
 //   - Structured error responses instead of stdout/stderr scraping.
@@ -24,13 +24,13 @@
 // runs to different codex profiles defined in `~/.codex/config.toml`.
 
 import type {
-  AdapterConfig,
-  AdapterType,
+  HarnessConfig,
+  HarnessType,
   ChatMessage,
-  LLMAdapter,
+  LLMHarness,
   ProbeResult,
   StreamChatParams,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import { McpStdioClient } from "./mcp-stdio-client";
 
@@ -123,15 +123,15 @@ type CodexItem =
     }
   | { type: string; id: string; [k: string]: unknown };
 
-export class CodexAdapter implements LLMAdapter {
-  readonly type: AdapterType = "codex";
+export class CodexHarness implements LLMHarness {
+  readonly type: HarnessType = "codex";
   readonly id: string;
   readonly name: string;
-  readonly config: AdapterConfig;
+  readonly config: HarnessConfig;
 
   #client: McpStdioClient | null = null;
 
-  constructor(config: AdapterConfig) {
+  constructor(config: HarnessConfig) {
     this.id = config.id;
     this.name = config.name;
     this.config = config;
@@ -187,7 +187,7 @@ export class CodexAdapter implements LLMAdapter {
             ? { profile: this.config.codexProfile }
             : {}),
           // Per-call override (from `StreamChatParams.model`) wins over
-          // the adapter's configured default model — and over the
+          // the harness's configured default model — and over the
           // profile's model too, since codex's `--model` flag takes
           // precedence over the profile.
           ...((params.model ?? this.config.model)
@@ -403,8 +403,8 @@ export class CodexAdapter implements LLMAdapter {
     }
   }
 
-  /** Tear down the long-lived subprocess. Called when the adapter is
-   *  removed from the registry — the AdaptersStore should invoke this. */
+  /** Tear down the long-lived subprocess. Called when the harness is
+   *  removed from the registry — the HarnessesStore should invoke this. */
   async dispose(): Promise<void> {
     if (this.#client) {
       await this.#client.stop().catch(() => {});

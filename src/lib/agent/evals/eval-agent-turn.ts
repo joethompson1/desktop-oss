@@ -5,13 +5,13 @@
 //
 // The orchestrator model and delegate resolver are provided by the
 // scenario — typical setup: a real LanguageModelV3 for the orchestrator
-// (we want real API behaviour) and a scripted mock LLMAdapter for the
+// (we want real API behaviour) and a scripted mock LLMHarness for the
 // delegate (so the test doesn't burn delegate-side tokens or wait on a
 // real CLI subprocess).
 
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 
-import type { AdapterConfig, LLMAdapter } from "$lib/types/adapter";
+import type { HarnessConfig, LLMHarness } from "$lib/types/harness";
 import { streamOrchestratorTurn } from "../loop.js";
 import { ensureOrchestratorConversation } from "$lib/db/conversations";
 
@@ -21,18 +21,18 @@ import type { ChatStreamPart } from "$lib/types/chat";
 export interface EvalTurnInput {
   /** User message to deliver to the orchestrator. */
   message: string;
-  /** Pre-built orchestrator model. Anthropic SDK adapters set
+  /** Pre-built orchestrator model. Anthropic SDK harnesses set
    *  `isAnthropic: true` to enable the deferred-tools machinery. */
   orchestratorModel: LanguageModelV3;
   isAnthropic: boolean;
   /** Resolver invoked when the orchestrator calls `delegate_task`. Return
    *  null to simulate "no delegate configured" (the tool then surfaces an
    *  error to the model). */
-  resolveDelegateAdapter: (preferredName?: string) => LLMAdapter | null;
-  /** Adapter configs surfaced to the orchestrator via the "Available
+  resolveDelegateHarness: (preferredName?: string) => LLMHarness | null;
+  /** Harness configs surfaced to the orchestrator via the "Available
    *  delegates" section of the system prompt. Usually one entry that
-   *  matches the mock adapter the resolver returns. */
-  delegateRosterConfigs?: AdapterConfig[];
+   *  matches the mock harness the resolver returns. */
+  delegateRosterConfigs?: HarnessConfig[];
   /** Conversation ID to drive the turn against. Defaults to the singleton
    *  orchestrator conversation. */
   conversationId?: string;
@@ -55,7 +55,7 @@ export async function evalAgentTurn(
     userMessage: input.message,
     orchestratorModel: input.orchestratorModel,
     isAnthropic: input.isAnthropic,
-    resolveDelegateAdapter: input.resolveDelegateAdapter,
+    resolveDelegateHarness: input.resolveDelegateHarness,
     delegateRosterConfigs: input.delegateRosterConfigs ?? [],
     signal: input.signal,
   });

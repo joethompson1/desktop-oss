@@ -1,5 +1,5 @@
 <script lang="ts">
-  // `/` always redirects (see +page.ts) — to /settings when no adapter is
+  // `/` always redirects (see +page.ts) — to /settings when no harness is
   // configured, otherwise to the most-recent /sessions/[id]. This renders
   // only for the brief moment before the redirect resolves.
 </script>

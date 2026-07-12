@@ -1,30 +1,30 @@
-// OpenAICompatibleAdapter — works against any /v1/chat/completions
+// OpenAICompatibleHarness — works against any /v1/chat/completions
 // endpoint that speaks the OpenAI streaming wire format: OpenAI itself,
 // Ollama, LM Studio, vLLM, llama.cpp server, Azure OpenAI, OpenRouter, etc.
 
 // Custom Rust-backed fetch — bypasses CORS by dispatching via reqwest
 // directly. See `native-fetch.ts` for the why. The fetch surface area is
 // preserved (response.ok, status, text(), body.getReader()) so the rest
-// of the adapter is unchanged.
+// of the harness is unchanged.
 import {
   nativeFetch as fetch,
   type NativeFetchResponse,
 } from "./native-fetch";
 import type {
-  AdapterConfig,
+  HarnessConfig,
   ChatMessage,
-  LLMAdapter,
+  LLMHarness,
   ProbeResult,
   StreamChatParams,
   ToolDefinition,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import { parseSSEStream } from "./sse";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
 
-export interface OpenAIAdapterDeps {
+export interface OpenAIHarnessDeps {
   getApiKey?: () => Promise<string | null>;
 }
 
@@ -39,14 +39,14 @@ interface OpenAIMessage {
   tool_call_id?: string;
 }
 
-export class OpenAICompatibleAdapter implements LLMAdapter {
+export class OpenAICompatibleHarness implements LLMHarness {
   readonly type = "openai-compatible" as const;
   readonly id: string;
   readonly name: string;
-  readonly config: AdapterConfig;
-  readonly #deps: OpenAIAdapterDeps;
+  readonly config: HarnessConfig;
+  readonly #deps: OpenAIHarnessDeps;
 
-  constructor(config: AdapterConfig, deps: OpenAIAdapterDeps = {}) {
+  constructor(config: HarnessConfig, deps: OpenAIHarnessDeps = {}) {
     this.id = config.id;
     this.name = config.name;
     this.config = config;
@@ -82,7 +82,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     if (!response.ok) {
       yield {
         type: "error",
-        error: `Adapter "${this.name}" returned ${response.status}: ${await safeReadText(response)}`,
+        error: `Harness "${this.name}" returned ${response.status}: ${await safeReadText(response)}`,
       };
       return;
     }
@@ -241,7 +241,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     ];
     return {
       // Per-call override (from `StreamChatParams.model`) wins over the
-      // adapter's configured default — lets the orchestrator pick a
+      // harness's configured default — lets the orchestrator pick a
       // different model per delegate spawn.
       model: params.model ?? this.config.model ?? DEFAULT_MODEL,
       messages,

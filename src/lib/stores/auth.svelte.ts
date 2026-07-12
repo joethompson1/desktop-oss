@@ -1,9 +1,9 @@
 // Auth store, OSS-stripped version. There is no remote backend and no
-// bearer token. "Authenticated" simply means: at least one adapter is
+// bearer token. "Authenticated" simply means: at least one harness is
 // configured. Keeps the same `hasToken` getter that the layout reads
 // (renamed conceptually but kept by the same name for shell compatibility).
 
-import { adapters } from "./adapters.svelte";
+import { harnesses } from "./harnesses.svelte";
 
 class AuthStore {
   #hydrated = $state<boolean>(false);
@@ -13,9 +13,9 @@ class AuthStore {
   }
 
   /** Kept for backwards compatibility with the copied shell components.
-   *  Returns true iff at least one adapter is configured. */
+   *  Returns true iff at least one harness is configured. */
   get hasToken(): boolean {
-    return adapters.configs.length > 0;
+    return harnesses.configs.length > 0;
   }
 
   /** No-op kept for shell components that call into auth setters. */
@@ -28,7 +28,7 @@ class AuthStore {
   }
 
   setToken(_value: string | null): void {
-    // no-op — adapter list is the source of truth
+    // no-op — harness list is the source of truth
   }
 }
 

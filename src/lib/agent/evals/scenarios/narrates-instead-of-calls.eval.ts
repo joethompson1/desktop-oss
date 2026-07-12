@@ -32,8 +32,8 @@ const { evalAgentTurn } = await import("../eval-agent-turn.js");
 const { seedConversation, delegationFollowthroughTurns } = await import(
   "../fixtures/conversation-builder.js"
 );
-const { makeMockDelegateAdapter } = await import(
-  "../fixtures/mock-delegate-adapter.js"
+const { makeMockDelegateHarness } = await import(
+  "../fixtures/mock-delegate-harness.js"
 );
 const { buildEvalOrchestratorModel } = await import(
   "../fixtures/eval-orchestrator-model.js"
@@ -59,8 +59,8 @@ async function runScenario(): Promise<void> {
 
   const { model, isAnthropic, provider, modelId } =
     buildEvalOrchestratorModel();
-  const { adapter: mockDelegate, calls: delegateCalls } =
-    makeMockDelegateAdapter({
+  const { harness: mockDelegate, calls: delegateCalls } =
+    makeMockDelegateHarness({
       id: "eval-delegate",
       name: "EvalDelegate",
       reply:
@@ -104,7 +104,7 @@ async function runScenario(): Promise<void> {
         message,
         orchestratorModel: model,
         isAnthropic,
-        resolveDelegateAdapter: () => mockDelegate,
+        resolveDelegateHarness: () => mockDelegate,
         delegateRosterConfigs: [mockDelegate.config],
       });
     },

@@ -20,7 +20,7 @@ to any core file. Treat that plug-and-play property as a hard design
 constraint: **prefer extending via a module over hard-wiring a feature
 into the core.**
 
-**Bring-your-own-LLM** via adapters: `anthropic` (API key or Claude Code
+**Bring-your-own-LLM** via harnesses: `anthropic` (API key or Claude Code
 OAuth), `openai-compatible` (OpenAI, Ollama, LM Studio, vLLM, OpenRouter,
 …), `claude-code`, `codex`, `cursor`. **Local-first**: no backend; state
 in SQLite, credentials in the OS keychain, provider HTTP through a Rust
@@ -33,7 +33,7 @@ command (never the webview's `fetch`).
   user's prompt + attached modules.
 - **Delegate** — a scoped sub-agent for one task. No memory of the
   conversation; runs in a sidecar process (can't touch the UI).
-- **Adapter** — an LLM backend. Agentic ones (`claude-code`, `codex`,
+- **Harness** — an LLM backend. Agentic ones (`claude-code`, `codex`,
   `cursor`) are delegate-only; raw-LLM ones (`anthropic`,
   `openai-compatible`) can also drive the orchestrator.
 - **Run / run chunk** — one delegate execution (`runs` row) and its
@@ -55,7 +55,7 @@ npm run check                 # svelte-check; must exit 0
 cd src-tauri && cargo check   # Rust-side check
 ```
 
-First launch redirects to `/settings` to add an adapter. UI hot-reloads;
+First launch redirects to `/settings` to add a harness. UI hot-reloads;
 Rust changes need a `tauri:dev` restart.
 
 ## Architecture in one paragraph
@@ -66,7 +66,7 @@ prompt (base + environment + delegate roster + active runs + **enabled
 modules' prompt fragments**) and the tool set (built-ins from `tools.ts`
 + **enabled modules' tools**), then runs the AI SDK's `streamText`. For
 focused work it calls `delegate_task`; `runDelegate` spawns a sub-agent
-against its own adapter in a sidecar, streams `run_chunks`, and returns a
+against its own harness in a sidecar, streams `run_chunks`, and returns a
 structured result. Because the loop runs in the webview, a module tool's
 `execute()` can synchronously mutate a Svelte rune store that its panel
 renders — the agent→panel channel.
@@ -74,7 +74,7 @@ renders — the agent→panel channel.
 ```
 User ⟷ orchestrator chat (webview)
         │  prompt = base + modules · tools = built-ins + modules
-        ├── delegate_task ─▶ runDelegate ─▶ delegate adapter (sidecar) ─▶ run_chunks (SQLite)
+        ├── delegate_task ─▶ runDelegate ─▶ delegate harness (sidecar) ─▶ run_chunks (SQLite)
         └── module tool ─▶ mutate module state (rune store) ─▶ right-dock panel re-renders
 ```
 
@@ -114,8 +114,8 @@ Modules live in `src/lib/modules/`. **Full authoring guide:
 
 Don't maintain an exhaustive tree here — it rots. Just the stable anchors:
 
-- `src/lib/adapters/` — one file per LLM backend; `index.ts` is the
-  `createAdapter` factory + `buildOrchestratorModel`. `native-fetch.ts`
+- `src/lib/harnesses/` — one file per LLM backend; `index.ts` is the
+  `createHarness` factory + `buildOrchestratorModel`. `native-fetch.ts`
   is the only fetch you may use for provider HTTP.
 - `src/lib/agent/` — orchestrator loop (`loop.ts`), delegation
   (`delegate.ts`), built-in tools (`tools.ts`), prompts (`prompts.ts`),
@@ -159,13 +159,13 @@ Don't maintain an exhaustive tree here — it rots. Just the stable anchors:
   Sidebar's floating-card style.
 - **HTTP**: never `window.fetch` for LLM endpoints (its `Origin` header
   trips CORS/anti-abuse at Anthropic). Always
-  `import { nativeFetch as fetch } from "$lib/adapters/native-fetch"`.
+  `import { nativeFetch as fetch } from "$lib/harnesses/native-fetch"`.
 - **Reuse**: a new chat surface is `new ChatStore({...})` +
   `<ChatSurface store={…}>`. A new stateful feature with UI → a
   **module**, not a bespoke component + singleton.
-- **Adapters**: one brand = one implementation; transport preference SDK
+- **Harnesses**: one brand = one implementation; transport preference SDK
   > MCP/stdio > JSON-mode CLI > plain-text CLI (avoid). Delegate-only
-  adapters return `null` from `buildOrchestratorModel`.
+  harnesses return `null` from `buildOrchestratorModel`.
 
 ## Critical pitfalls
 
@@ -181,7 +181,7 @@ Don't maintain an exhaustive tree here — it rots. Just the stable anchors:
    `loop.ts` is imported by the eval harness.
 7. **No `registerTool()` global** — built-ins are an object literal in
    `tools.ts`; extra tools come from modules via `integration.ts`.
-8. **Adapter sprawl**: extend/replace a transport before adding a type;
+8. **Harness sprawl**: extend/replace a transport before adding a type;
    delete failed experiments.
 
 ## Common tasks
@@ -192,17 +192,17 @@ Don't maintain an exhaustive tree here — it rots. Just the stable anchors:
   (`tools.ts`); add a `tool-summary.ts` case; add a `ToolPartView.svelte`
   branch only if the generic JSON fallback is wrong. Prefer a module for
   feature-specific tools.
-- **Add an adapter** → implement `LLMAdapter`, add cases to `index.ts`
-  (`createAdapter` + `buildOrchestratorModel`) and the `AdapterType`
+- **Add a harness** → implement `LLMHarness`, add cases to `index.ts`
+  (`createHarness` + `buildOrchestratorModel`) and the `HarnessType`
   literal + `presets.ts`. Heads-up: several non-exhaustive `switch`es
-  over `AdapterType` (presets, loop, settings UI) aren't compiler-caught.
+  over `HarnessType` (presets, loop, settings UI) aren't compiler-caught.
 - **Add a chat surface** → `new ChatStore({...})` + `<ChatSurface>`.
 
 ## Anthropic OAuth (account mode)
 
 `api.anthropic.com` accepts the CLI's OAuth tokens only when the request
 matches an expected fingerprint. If you touch the Anthropic header
-construction (`adapters/anthropic.ts` + `claude-code-fingerprint.ts`),
+construction (`harnesses/anthropic.ts` + `claude-code-fingerprint.ts`),
 keep ALL of:
 - `Authorization: Bearer <oauth_token>` (from
   `read_claude_code_credentials`, keychain).

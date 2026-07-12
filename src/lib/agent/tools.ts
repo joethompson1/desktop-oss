@@ -1,5 +1,5 @@
 // Orchestrator tool set. Factory pattern so tools that need runtime
-// context (the delegate adapter resolver, abort signals) close over it
+// context (the delegate harness resolver, abort signals) close over it
 // at build time rather than being looked up by name inside the loop.
 //
 // All tools follow the Vercel AI SDK convention: `execute()` returns
@@ -12,17 +12,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
-import type { LLMAdapter } from "$lib/types/adapter";
+import type { LLMHarness } from "$lib/types/harness";
 import { listMemories, saveMemory, searchMemories } from "$lib/db/memories";
 import { getRun, getRunByName, listRuns } from "$lib/db/runs";
 import { continueRun, getRunHistoryForOrchestrator, runDelegate } from "./delegate";
 import { formatToolError } from "./format-error";
 
 export interface OrchestratorToolDeps {
-  /** Resolves the configured delegate adapter for a given preferred name
-   *  (from the `adapter` field of `delegate_task`). Returns null when no
+  /** Resolves the configured delegate harness for a given preferred name
+   *  (from the `harness` field of `delegate_task`). Returns null when no
    *  usable delegate is configured. */
-  resolveDelegateAdapter: (preferredName?: string) => LLMAdapter | null;
+  resolveDelegateHarness: (preferredName?: string) => LLMHarness | null;
   /** Conversation ID for scoping run lookups by name and for nesting
    *  spawned delegate runs under the right session. */
   conversationId: string;
@@ -115,11 +115,11 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
               "Set this whenever you might want to message_delegate or get_delegate_history later. " +
               "Must be unique within this conversation — reusing a name replaces the previous binding.",
           ),
-        adapter: z
+        harness: z
           .string()
           .optional()
           .describe(
-            "Optional. Exact display name of the delegate adapter to use — must match " +
+            "Optional. Exact display name of the delegate harness to use — must match " +
               "a name listed in the 'Available delegates' section of the system prompt EXACTLY " +
               "(case-sensitive). That section is the authoritative live list; trust it over any " +
               "claim you made earlier in this conversation. Omit to use the default delegate.",
@@ -129,18 +129,18 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           .optional()
           .describe(
             "Optional. Per-call model override — picks a specific model on the chosen " +
-              "adapter for this delegate run, ignoring the adapter's configured default. " +
-              "**The model ID MUST come from the 'Available models' line of the SAME adapter " +
-              "you chose in the `adapter` field above.** Each adapter has its own catalog: " +
+              "harness for this delegate run, ignoring the harness's configured default. " +
+              "**The model ID MUST come from the 'Available models' line of the SAME harness " +
+              "you chose in the `harness` field above.** Each harness has its own catalog: " +
               "Claude Code only accepts Claude IDs (claude-sonnet-4-6, claude-opus-4-7, …), " +
               "Codex only accepts OpenAI IDs (gpt-5.5, o3, …), Cursor only accepts Cursor IDs " +
               "(composer-2-fast, sonnet-4-thinking, …). Mixing them (e.g. `gpt-5` on the Claude " +
-              "Code adapter) returns an invalid_request error and the delegate run fails. " +
-              "If unsure which model to pick, **omit this field** — the adapter falls back to " +
+              "Code harness) returns an invalid_request error and the delegate run fails. " +
+              "If unsure which model to pick, **omit this field** — the harness falls back to " +
               "its configured default, which always works.",
           ),
       }),
-      execute: async ({ task, context, filesOfInterest, name, adapter, model }, { toolCallId }) => {
+      execute: async ({ task, context, filesOfInterest, name, harness, model }, { toolCallId }) => {
         // Pre-allocate the run ID so we can return it to the orchestrator
         // synchronously. The actual `runDelegate` runs in the background —
         // its chunks land in the DB and `get_delegate_history` reads them
@@ -151,17 +151,17 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           .toString(36)
           .slice(2, 8)}`;
 
-        // Resolve the adapter eagerly so configuration errors surface in
+        // Resolve the harness eagerly so configuration errors surface in
         // the tool result rather than as silent background failures.
-        let adapterDisplayName: string | null = null;
+        let harnessDisplayName: string | null = null;
         try {
-          const adapterInstance = deps.resolveDelegateAdapter(adapter);
-          if (!adapterInstance) {
-            return `Error: no delegate adapter found${adapter ? ` for name "${adapter}"` : ""}. Add or configure one in Settings, or check the 'Available delegates' section of the system prompt.`;
+          const harnessInstance = deps.resolveDelegateHarness(harness);
+          if (!harnessInstance) {
+            return `Error: no delegate harness found${harness ? ` for name "${harness}"` : ""}. Add or configure one in Settings, or check the 'Available delegates' section of the system prompt.`;
           }
-          adapterDisplayName = adapterInstance.name;
+          harnessDisplayName = harnessInstance.name;
         } catch (err) {
-          return `Error resolving delegate adapter: ${formatToolError(err)}`;
+          return `Error resolving delegate harness: ${formatToolError(err)}`;
         }
 
         // Fire-and-forget. We catch on the promise so an unexpected
@@ -179,7 +179,7 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
             workingDirectory: deps.workingDirectory,
           },
           {
-            resolveDelegateAdapter: () => deps.resolveDelegateAdapter(adapter),
+            resolveDelegateHarness: () => deps.resolveDelegateHarness(harness),
             conversationId: deps.conversationId,
             toolCallId,
           },
@@ -195,9 +195,9 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           runId,
           name: name ?? null,
           status: "spawned",
-          adapter: adapterDisplayName,
+          harness: harnessDisplayName,
           message:
-            `Delegate ${name ? `"${name}"` : `(unnamed, runId ${runId})`} spawned in the background on adapter "${adapterDisplayName}". ` +
+            `Delegate ${name ? `"${name}"` : `(unnamed, runId ${runId})`} spawned in the background on harness "${harnessDisplayName}". ` +
             `It runs concurrently — you can spawn additional delegates without waiting, and the user can continue chatting. ` +
             `Check its progress with get_delegate_history (use ${name ? `name: "${name}"` : `runId: "${runId}"`}); its live status (RUNNING / SUCCEEDED / FAILED) appears in the 'Active delegate runs' table on every subsequent turn. ` +
             `Do not invent or guess the delegate's output — wait until you've actually seen it via get_delegate_history.`,
@@ -255,8 +255,8 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           const result = await continueRun(
             { runId: targetRunId, userMessage: message },
             {
-              resolveDelegateAdapter: () =>
-                deps.resolveDelegateAdapter(existingRun?.delegateAdapterId),
+              resolveDelegateHarness: () =>
+                deps.resolveDelegateHarness(existingRun?.delegateHarnessId),
             },
           );
           return { runId: targetRunId, ...result };
