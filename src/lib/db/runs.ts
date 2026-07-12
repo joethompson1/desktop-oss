@@ -44,7 +44,7 @@ export async function createRun(input: {
    *  the generated run ID. */
   name?: string;
   title: string;
-  delegateAdapterId?: string;
+  delegateHarnessId?: string;
   delegateType?: string;
 }): Promise<void> {
   const db = await getDb();
@@ -62,7 +62,7 @@ export async function createRun(input: {
       input.toolCallId ?? null,
       input.name ?? null,
       input.title,
-      input.delegateAdapterId ?? null,
+      input.delegateHarnessId ?? null,
       input.delegateType ?? null,
       now,
     ],
@@ -214,12 +214,12 @@ function recordToSummary(r: RunRecord): RunSummary {
     name: r.name ?? undefined,
     title: r.title,
     status: r.status as RunStatus,
-    delegateAdapterId: r.delegate_adapter_id ?? undefined,
+    delegateHarnessId: r.delegate_adapter_id ?? undefined,
     delegateType: r.delegate_type ?? undefined,
     exitCode: r.exit_code ?? undefined,
     summary: r.summary ?? undefined,
     contextSummary: r.context_summary ?? undefined,
-    adapterSessionId: r.adapter_session_id ?? undefined,
+    harnessSessionId: r.adapter_session_id ?? undefined,
     filesChanged: r.files_changed_json
       ? (JSON.parse(r.files_changed_json) as string[])
       : undefined,
@@ -231,22 +231,25 @@ function recordToSummary(r: RunRecord): RunSummary {
 }
 
 /**
- * Persist an adapter-provided session token for this run. Used by the
- * claude-code adapter (SDK's `session_id`) and the codex adapter
+ * Persist a harness-provided session token for this run. Used by the
+ * claude-code harness (SDK's `session_id`) and the codex harness
  * (`threadId` from the MCP `codex` tool) — captured on the first turn
  * so subsequent turns can pass it back as the `resume` / `threadId`
  * option and continue the same provider-side session (preserving tool
  * state, scratchpad, file checkpointing). Idempotent: writing the same
  * ID again is a no-op.
+ *
+ * Column stays `adapter_session_id` — renaming a SQLite column carries
+ * migration risk for no real benefit; only the TS-facing name changed.
  */
-export async function updateAdapterSessionId(
+export async function updateHarnessSessionId(
   runId: string,
-  adapterSessionId: string,
+  harnessSessionId: string,
 ): Promise<void> {
   const db = await getDb();
   await db.execute(
     "UPDATE runs SET adapter_session_id = $1 WHERE id = $2",
-    [adapterSessionId, runId],
+    [harnessSessionId, runId],
   );
 }
 

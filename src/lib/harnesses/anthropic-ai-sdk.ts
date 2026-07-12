@@ -19,7 +19,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
 import type { LanguageModelV3, LanguageModelV3Prompt } from "@ai-sdk/provider";
 
-import type { AdapterConfig } from "$lib/types/adapter";
+import type { HarnessConfig } from "$lib/types/harness";
 import { getValidClaudeCodeCredentials } from "./claude-code-auth";
 import { nativeFetchAsFetch } from "./native-fetch";
 import {
@@ -40,13 +40,13 @@ export interface BuildAnthropicModelDeps {
 }
 
 /**
- * Build a Vercel AI SDK `LanguageModel` for the given Anthropic adapter
+ * Build a Vercel AI SDK `LanguageModel` for the given Anthropic harness
  * config. Throws when credentials are missing or expired so the caller
  * surfaces a clean error to the user rather than producing a model that
  * silently 401s on first use.
  */
 export async function buildAnthropicLanguageModel(
-  config: AdapterConfig,
+  config: HarnessConfig,
   deps: BuildAnthropicModelDeps = {},
 ): Promise<LanguageModelV3> {
   const authMode = config.authMode ?? "api-key";
@@ -69,7 +69,7 @@ export async function buildAnthropicLanguageModel(
     const creds = await getValidClaudeCodeCredentials();
     if (!creds.hasCredentials || !creds.accessToken) {
       throw new Error(
-        "No Claude Code account login found. Run `claude auth login` first, or switch this adapter to API key mode.",
+        "No Claude Code account login found. Run `claude auth login` first, or switch this harness to API key mode.",
       );
     }
     authToken = creds.accessToken;
@@ -84,7 +84,7 @@ export async function buildAnthropicLanguageModel(
     apiKey = await deps.getApiKey?.();
     if (!apiKey) {
       throw new Error(
-        `No API key configured for adapter "${config.name}". Add one in Settings.`,
+        `No API key configured for harness "${config.name}". Add one in Settings.`,
       );
     }
     betas.push(PROMPT_CACHING_BETA);

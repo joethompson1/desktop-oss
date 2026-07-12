@@ -8,8 +8,8 @@
 import type { ModelMessage } from "ai";
 
 import { ChatStore } from "./chat-store.svelte";
-import { adapters } from "./adapters.svelte";
-import { buildOrchestratorModel } from "$lib/adapters";
+import { harnesses } from "./harnesses.svelte";
+import { buildOrchestratorModel } from "$lib/harnesses";
 import { streamOrchestratorTurn } from "$lib/agent/loop";
 import {
   appendMessage,
@@ -81,12 +81,12 @@ export function createOrchestratorChatStore(
     },
 
     async *send({ text, attachments, skillExpandedBody }) {
-      const orchestratorConfig = adapters.orchestratorConfig;
+      const orchestratorConfig = harnesses.orchestratorConfig;
       if (!orchestratorConfig) {
         yield {
           type: "error",
           error:
-            "No orchestrator adapter configured. Go to Settings → Adapters and add one.",
+            "No orchestrator harness configured. Go to Settings → Harnesses and add one.",
         };
         return;
       }
@@ -103,7 +103,7 @@ export function createOrchestratorChatStore(
       if (!orchestratorModel) {
         yield {
           type: "error",
-          error: `Adapter "${orchestratorConfig.name}" can't run as the orchestrator — Claude Code and Codex run their own internal agent loops with their own tool sets, so they can only be delegates. Choose an Anthropic or OpenAI-compatible adapter as the orchestrator in Settings (it's the agent that talks to you and decides which delegates to spawn).`,
+          error: `Harness "${orchestratorConfig.name}" can't run as the orchestrator — Claude Code and Codex run their own internal agent loops with their own tool sets, so they can only be delegates. Choose an Anthropic or OpenAI-compatible harness as the orchestrator in Settings (it's the agent that talks to you and decides which delegates to spawn).`,
         };
         return;
       }
@@ -140,18 +140,18 @@ export function createOrchestratorChatStore(
         attachments: attachmentMeta,
         orchestratorModel,
         isAnthropic: orchestratorConfig.type === "anthropic",
-        // The orchestrator may pass an explicit `adapter` field in each
+        // The orchestrator may pass an explicit `harness` field in each
         // delegate_task tool call to pick which delegate handles it. We
         // try that first, fall back to the default delegate, and finally
         // to null (which makes the runner surface a clear error).
-        resolveDelegateAdapter: (preferredName) => {
+        resolveDelegateHarness: (preferredName) => {
           if (preferredName) {
-            const named = adapters.resolveByNameOrId(preferredName);
+            const named = harnesses.resolveByNameOrId(preferredName);
             if (named) return named;
           }
-          return adapters.resolveDelegate();
+          return harnesses.resolveDelegate();
         },
-        delegateRosterConfigs: adapters.findConfigsByDelegateRole(),
+        delegateRosterConfigs: harnesses.findConfigsByDelegateRole(),
         // Mid-turn injection of background-delegate completion
         // notifications: drain any queued system-event items at each
         // step boundary so the orchestrator reacts immediately instead
@@ -218,7 +218,7 @@ function formatCompletionNotification(batch: RunCompletionEvent[]): string {
     const summary = evt.summary
       ? ` Summary: ${evt.summary.length > 280 ? evt.summary.slice(0, 280) + "…" : evt.summary}`
       : " (no text output — check tool calls via get_delegate_history if relevant.)";
-    return `- Delegate ${label} on adapter "${evt.adapterName}" finished with status ${evt.status}.${summary}`;
+    return `- Delegate ${label} on harness "${evt.harnessName}" finished with status ${evt.status}.${summary}`;
   });
   const footer =
     `\nThis is a system-generated notification — not a user request. Decide whether to act on these completions based on what the user previously asked for. To USE a delegate's actual output (quote it, build on it, hand off to another delegate), call get_delegate_history(name or runId) first; the summaries above are a preview only.`;

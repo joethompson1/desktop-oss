@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { goto } from "$app/navigation";
-  import { adapters } from "$lib/stores/adapters.svelte";
+  import { harnesses } from "$lib/stores/harnesses.svelte";
   import { health } from "$lib/stores/health.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
   import { modules } from "$lib/modules/store.svelte";
@@ -10,11 +10,11 @@
     listConversations,
   } from "$lib/db/conversations";
   import {
-    getAdapterApiKey,
-    setAdapterApiKey,
-    clearAdapterApiKey,
-  } from "$lib/adapters";
-  import { readClaudeCodeCredentials } from "$lib/adapters/claude-code-auth";
+    getHarnessApiKey,
+    setHarnessApiKey,
+    clearHarnessApiKey,
+  } from "$lib/harnesses";
+  import { readClaudeCodeCredentials } from "$lib/harnesses/claude-code-auth";
   import {
     loadOrchestratorPrompt,
     loadDelegatePrompt,
@@ -36,10 +36,10 @@
   import type { SkillSource } from "$lib/skills/types";
   import {
     isDelegateOnlyType,
-    type AdapterConfig,
-    type AdapterType,
+    type HarnessConfig,
+    type HarnessType,
     type AnthropicAuthMode,
-  } from "$lib/types/adapter";
+  } from "$lib/types/harness";
   import {
     ANTHROPIC_MODEL_PRESETS,
     CLAUDE_CODE_MODEL_PRESETS,
@@ -49,15 +49,15 @@
     defaultDescriptionFor,
     type ModelPreset,
     type ProviderPreset,
-  } from "$lib/adapters/presets";
-  import AdapterCard from "$lib/components/settings/AdapterCard.svelte";
+  } from "$lib/harnesses/presets";
+  import HarnessCard from "$lib/components/settings/HarnessCard.svelte";
 
-  type Tab = "adapters" | "prompts" | "skills" | "modules" | "about";
-  let tab = $state<Tab>("adapters");
+  type Tab = "harnesses" | "prompts" | "skills" | "modules" | "about";
+  let tab = $state<Tab>("harnesses");
 
-  // ─── Adapters: New-adapter form state ──────────────────────────────────
-  let newAdapterOpen = $state(false);
-  let newType = $state<AdapterType>("anthropic");
+  // ─── Harnesses: New-harness form state ─────────────────────────────────
+  let newHarnessOpen = $state(false);
+  let newType = $state<HarnessType>("anthropic");
   let newName = $state("");
   let newAuthMode = $state<AnthropicAuthMode>("account");
 
@@ -76,7 +76,7 @@
   // a different host). Empty triggers the preset default at save time.
   let newProviderBaseUrl = $state("");
 
-  // Inline API key for new adapter — saved to the keychain on Add. Empty is
+  // Inline API key for new harness — saved to the keychain on Add. Empty is
   // valid for local endpoints (Ollama / LM Studio) that don't gate on auth.
   let newApiKey = $state("");
 
@@ -87,9 +87,9 @@
   let newClaudeCodeCustomModel = $state("");
 
   // Codex-specific fields. Profile names a section in ~/.codex/config.toml
-  // and tells the adapter which model + provider to route through;
+  // and tells the harness which model + provider to route through;
   // sandbox is the codex tool-execution policy. Model is an optional
-  // per-adapter override of whatever the profile would pick.
+  // per-harness override of whatever the profile would pick.
   let newCodexProfile = $state("");
   let newCodexSandbox = $state<
     "read-only" | "workspace-write" | "danger-full-access"
@@ -156,12 +156,12 @@
   });
 
   // Per-row edit state (API key visibility, codex profile/sandbox
-  // drafts, cursor model drafts) used to live here, but `AdapterCard`
+  // drafts, cursor model drafts) used to live here, but `HarnessCard`
   // now owns its own per-instance edit toggles and drafts. The parent
   // only handles cross-card concerns (delete, set-default, account
   // info refresh).
 
-  // Account-mode status — populated when an Anthropic/account adapter exists.
+  // Account-mode status — populated when an Anthropic/account harness exists.
   let accountInfo = $state<{
     has: boolean;
     email: string | null;
@@ -178,8 +178,8 @@
     void refreshAccountInfo();
   });
 
-  function resetNewAdapter() {
-    newAdapterOpen = false;
+  function resetNewHarness() {
+    newHarnessOpen = false;
     newName = "";
     newAuthMode = "account";
     newType = "anthropic";
@@ -202,7 +202,7 @@
 
   /** Translate a preset-index + custom-string pair into the actual model
    *  ID to save on the config. Returns `undefined` for "no model" (the
-   *  -2 sentinel) and for an empty custom field, letting the adapter
+   *  -2 sentinel) and for an empty custom field, letting the harness
    *  fall back to whatever default the SDK / profile uses. */
   function pickModelFromPresetIdx(
     idx: number,
@@ -217,7 +217,7 @@
     return undefined;
   }
 
-  function defaultName(t: AdapterType): string {
+  function defaultName(t: HarnessType): string {
     if (t === "anthropic") {
       return selectedAnthropicPreset?.label ?? "Claude";
     }
@@ -232,22 +232,22 @@
     if (t === "codex") return "Codex";
     if (t === "claude-code") return "Claude Code";
     if (t === "cursor") return "Cursor";
-    return "Adapter";
+    return "Harness";
   }
 
-  async function addAdapter() {
+  async function addHarness() {
     const id = `${newType}-${Date.now().toString(36)}`;
-    const config: AdapterConfig = {
+    const config: HarnessConfig = {
       id,
       type: newType,
       name: newName.trim() || defaultName(newType),
-      // Only auto-promote to orchestrator when this is the first adapter
+      // Only auto-promote to orchestrator when this is the first harness
       // AND the type is orchestrator-capable. Otherwise the app would
       // appear "broken" on first launch — the orchestrator slot would
-      // be filled by a delegate-only adapter that immediately errors.
+      // be filled by a delegate-only harness that immediately errors.
       isOrchestratorDefault:
-        adapters.configs.length === 0 && !isDelegateOnlyType(newType),
-      isDelegateDefault: adapters.configs.length === 0,
+        harnesses.configs.length === 0 && !isDelegateOnlyType(newType),
+      isDelegateDefault: harnesses.configs.length === 0,
     };
     if (newType === "anthropic") {
       const preset = selectedAnthropicPreset;
@@ -295,7 +295,7 @@
         codexProfile: config.codexProfile,
       });
     }
-    await adapters.upsert(config);
+    await harnesses.upsert(config);
 
     // Stash the inline API key if one was provided. We do this for
     // Anthropic (api-key mode), OpenAI-compatible, and Cursor (which
@@ -307,36 +307,36 @@
       newType === "cursor" ||
       (newType === "anthropic" && newAuthMode === "api-key");
     if (needsKey && newApiKey.trim()) {
-      await setAdapterApiKey(id, newApiKey.trim());
+      await setHarnessApiKey(id, newApiKey.trim());
     }
 
-    resetNewAdapter();
+    resetNewHarness();
     void health.probe();
   }
 
-  async function deleteAdapter(id: string) {
-    if (!window.confirm("Delete this adapter? Its API key will also be cleared.")) return;
-    await clearAdapterApiKey(id).catch(() => {});
-    await adapters.remove(id);
+  async function deleteHarness(id: string) {
+    if (!window.confirm("Delete this harness? Its API key will also be cleared.")) return;
+    await clearHarnessApiKey(id).catch(() => {});
+    await harnesses.remove(id);
     void health.probe();
   }
 
   async function makeOrchestrator(id: string) {
-    await adapters.setOrchestratorDefault(id);
+    await harnesses.setOrchestratorDefault(id);
     void health.probe();
   }
 
   async function makeDelegate(id: string) {
-    await adapters.setDelegateDefault(id);
+    await harnesses.setDelegateDefault(id);
   }
 
   // Per-card edit handlers (set-auth-mode, key edit, codex/cursor
   // defaults edit) used to live here. They've moved into
-  // `AdapterCard` which owns its own per-instance edit state and
+  // `HarnessCard` which owns its own per-instance edit state and
   // commits back via the `onUpdate` callback. The card calls our
   // `loadApiKey` / `saveApiKey` / `clearApiKey` callbacks for
   // keychain reads/writes; we just forward those to the same
-  // `getAdapterApiKey` / `setAdapterApiKey` / `clearAdapterApiKey`
+  // `getHarnessApiKey` / `setHarnessApiKey` / `clearHarnessApiKey`
   // helpers the rest of the page already imports.
 
   // ─── Prompts ───────────────────────────────────────────────────────────
@@ -371,7 +371,7 @@
   async function clearChatHistory() {
     if (
       !window.confirm(
-        "Clear ALL sessions? This deletes every session's messages and delegate runs from the sidebar. Memories and adapters are kept.",
+        "Clear ALL sessions? This deletes every session's messages and delegate runs from the sidebar. Memories and harnesses are kept.",
       )
     ) {
       return;
@@ -393,10 +393,10 @@
 
   <nav class="tabs">
     <button
-      class:active={tab === "adapters"}
-      onclick={() => (tab = "adapters")}
+      class:active={tab === "harnesses"}
+      onclick={() => (tab = "harnesses")}
     >
-      Adapters
+      Harnesses
     </button>
     <button
       class:active={tab === "prompts"}
@@ -418,12 +418,12 @@
     </button>
   </nav>
 
-  {#if tab === "adapters"}
+  {#if tab === "harnesses"}
     <section class="panel">
       <p class="intro">
         Configure how the app talks to language models. The
         <strong>orchestrator</strong>
-        is who you chat with. <strong>Every other adapter</strong> is
+        is who you chat with. <strong>Every other harness</strong> is
         automatically available as a delegate the orchestrator can call
         by name — write a role/strengths description on each so the
         orchestrator can pick well. The
@@ -432,40 +432,40 @@
         specific one.
       </p>
 
-      {#if adapters.configs.length === 0}
+      {#if harnesses.configs.length === 0}
         <div class="empty">
-          <p>No adapters configured yet. Add one below to start chatting.</p>
+          <p>No harnesses configured yet. Add one below to start chatting.</p>
         </div>
       {/if}
 
-      {#each adapters.configs as cfg (cfg.id)}
-        <AdapterCard
+      {#each harnesses.configs as cfg (cfg.id)}
+        <HarnessCard
           {cfg}
           {accountInfo}
-          onUpdate={(next) => adapters.upsert(next).then(() => health.probe())}
-          onDelete={() => deleteAdapter(cfg.id)}
+          onUpdate={(next) => harnesses.upsert(next).then(() => health.probe())}
+          onDelete={() => deleteHarness(cfg.id)}
           onSetOrchestrator={() => makeOrchestrator(cfg.id)}
           onSetDelegate={() => makeDelegate(cfg.id)}
           onRefreshAccount={refreshAccountInfo}
-          loadApiKey={() => getAdapterApiKey(cfg.id)}
+          loadApiKey={() => getHarnessApiKey(cfg.id)}
           saveApiKey={async (key) => {
-            await setAdapterApiKey(cfg.id, key);
+            await setHarnessApiKey(cfg.id, key);
             void health.probe();
           }}
           clearApiKey={async () => {
-            await clearAdapterApiKey(cfg.id);
+            await clearHarnessApiKey(cfg.id);
             void health.probe();
           }}
         />
       {/each}
 
-      {#if !newAdapterOpen}
-        <button class="primary add" onclick={() => (newAdapterOpen = true)}>
-          + Add adapter
+      {#if !newHarnessOpen}
+        <button class="primary add" onclick={() => (newHarnessOpen = true)}>
+          + Add harness
         </button>
       {:else}
-        <div class="new-adapter">
-          <h3>New adapter</h3>
+        <div class="new-harness">
+          <h3>New harness</h3>
           <label>
             Type
             <select bind:value={newType}>
@@ -641,7 +641,7 @@
               Runs <code>@anthropic-ai/claude-agent-sdk</code> in a
               bundled sidecar. Authenticates with the same keychain
               entry as the Claude Code CLI — sign in once via
-              <code>claude /login</code> and this adapter reuses it. No
+              <code>claude /login</code> and this harness reuses it. No
               API key required. The orchestrator may override the model
               per delegation; this is the fallback.
             </div>
@@ -738,16 +738,16 @@
           </label>
 
           <div class="row">
-            <button class="primary" onclick={addAdapter}>Add</button>
-            <button onclick={resetNewAdapter}>Cancel</button>
+            <button class="primary" onclick={addHarness}>Add</button>
+            <button onclick={resetNewHarness}>Cancel</button>
           </div>
         </div>
       {/if}
 
       <div class="health-row">
         Health: <strong>{health.overall}</strong>
-        {#if health.snapshot.adapterName}
-          via <code>{health.snapshot.adapterName}</code>
+        {#if health.snapshot.harnessName}
+          via <code>{health.snapshot.harnessName}</code>
         {/if}
         {#if health.snapshot.message}
           <span class="muted">— {health.snapshot.message}</span>
@@ -989,10 +989,10 @@
     color: var(--text-muted);
     text-align: center;
   }
-  /* Per-card chrome (.adapter, .badge, .role, .kv, .auth-mode, .key,
-   * button.danger, .account-row .ok/.warn) lives in AdapterCard.svelte.
+  /* Per-card chrome (.harness, .badge, .role, .kv, .auth-mode, .key,
+   * button.danger, .account-row .ok/.warn) lives in HarnessCard.svelte.
    * The selectors below are only the ones still used by the
-   * new-adapter form and the page-level layout. */
+   * new-harness form and the page-level layout. */
   .kv-hint {
     color: var(--text-muted);
     font-size: 0.84em;
@@ -1040,7 +1040,7 @@
   button.add {
     align-self: flex-start;
   }
-  .new-adapter {
+  .new-harness {
     padding: 1em;
     border: 1px solid var(--accent);
     border-radius: 8px;
@@ -1049,18 +1049,18 @@
     flex-direction: column;
     gap: 0.6em;
   }
-  .new-adapter h3 {
+  .new-harness h3 {
     margin: 0;
   }
-  .new-adapter label {
+  .new-harness label {
     display: flex;
     flex-direction: column;
     gap: 0.2em;
     font-size: 0.85em;
     color: var(--text-muted);
   }
-  .new-adapter input,
-  .new-adapter select {
+  .new-harness input,
+  .new-harness select {
     background: var(--bg-input);
     border: 1px solid var(--border-strong);
     border-radius: 6px;

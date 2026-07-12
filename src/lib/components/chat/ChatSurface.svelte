@@ -28,7 +28,7 @@
     composerPlaceholder?: string;
     /** Restrict the slash-menu to (local) ∪ (this source). `null` shows
      *  everything (orchestrator surface). Used by delegate surfaces to
-     *  match the adapter's source family. */
+     *  match the harness's source family. */
     sourceFilter?: SkillSource | null;
   }
 

@@ -6,7 +6,7 @@
 //     orchestrator/delegate prompts.
 //   - `snapshotRecordedResponses` — Map keyed by stableHash(brief) → recorded
 //     delegate output. Consumed by the replay scenario's mock delegate.
-//   - `snapshotAdapterConfigs` — adapter configs (credentials stripped)
+//   - `snapshotHarnessConfigs` — harness configs (credentials stripped)
 //     for the delegate roster the model saw at capture time.
 //   - `snapshotMetadata` — capturedAt / source conversation id.
 //
@@ -26,7 +26,7 @@ export function renderSnapshotFile(
   lines.push("");
   lines.push(metadataBlock(snapshot));
   lines.push("");
-  lines.push(adapterConfigsBlock(snapshot.adapterConfigs));
+  lines.push(harnessConfigsBlock(snapshot.harnessConfigs));
   lines.push("");
   lines.push(recordedResponsesBlock(snapshot.recordedDelegateResponses));
   lines.push("");
@@ -41,7 +41,7 @@ import { setSetting } from "$lib/db/settings";
 
 import type { UIChatTurn } from "$lib/types/chat";
 import type { ChunkKind } from "$lib/types/run";
-import type { AdapterConfig } from "$lib/types/adapter";
+import type { HarnessConfig } from "$lib/types/harness";
 
 import type { RecordedDelegateResponse } from "../../snapshot/types.js";`;
 
@@ -76,8 +76,8 @@ function metadataBlock(snapshot: CapturedSnapshot): string {
   )} as const;`;
 }
 
-function adapterConfigsBlock(configs: unknown[]): string {
-  return `export const snapshotAdapterConfigs: AdapterConfig[] = ${json(configs, 0)};`;
+function harnessConfigsBlock(configs: unknown[]): string {
+  return `export const snapshotHarnessConfigs: HarnessConfig[] = ${json(configs, 0)};`;
 }
 
 function recordedResponsesBlock(
@@ -122,12 +122,12 @@ interface SnapshotRunRow {
   name: string | null;
   title: string;
   status: string;
-  delegateAdapterId: string | null;
+  delegateHarnessId: string | null;
   delegateType: string | null;
   exitCode: number | null;
   summary: string | null;
   contextSummary: string | null;
-  adapterSessionId: string | null;
+  harnessSessionId: string | null;
   filesChangedJson: string | null;
   createdAt: number;
   completedAt: number | null;
@@ -187,12 +187,12 @@ export async function buildSnapshotConversation(
         run.name,
         run.title,
         run.status,
-        run.delegateAdapterId,
+        run.delegateHarnessId,
         run.delegateType,
         run.exitCode,
         run.summary,
         run.contextSummary,
-        run.adapterSessionId,
+        run.harnessSessionId,
         run.filesChangedJson,
         run.createdAt,
         run.completedAt,
@@ -218,12 +218,12 @@ function snapshotRunRows(snapshot: CapturedSnapshot) {
     name: r.name ?? null,
     title: r.title,
     status: r.status,
-    delegateAdapterId: r.delegateAdapterId ?? null,
+    delegateHarnessId: r.delegateHarnessId ?? null,
     delegateType: r.delegateType ?? null,
     exitCode: r.exitCode ?? null,
     summary: r.summary ?? null,
     contextSummary: r.contextSummary ?? null,
-    adapterSessionId: r.adapterSessionId ?? null,
+    harnessSessionId: r.harnessSessionId ?? null,
     filesChangedJson: r.filesChanged ? JSON.stringify(r.filesChanged) : null,
     createdAt: Date.parse(r.createdAt),
     completedAt: r.completedAt ? Date.parse(r.completedAt) : null,

@@ -11,7 +11,7 @@
 // Rust command that uses reqwest directly — no Origin header, no CORS
 // classification, no org-level denial.
 //
-// The wrapper preserves the streaming surface area the adapters need:
+// The wrapper preserves the streaming surface area the harnesses need:
 //   - `response.ok`, `response.status`
 //   - `response.text()` for buffering
 //   - `response.body.getReader()` for SSE parsing
@@ -202,7 +202,7 @@ export async function nativeFetch(
  * fetch-API-shaped wrapper around `nativeFetch`. The Vercel AI SDK's
  * provider `fetch` option expects a function with the standard browser
  * `fetch` signature returning a real `Response`. Our `nativeFetch`
- * returns a narrower `NativeFetchResponse`, so this adapter rebuilds
+ * returns a narrower `NativeFetchResponse`, so this wrapper rebuilds
  * a proper `Response` over the same Rust-side stream.
  */
 export const nativeFetchAsFetch: typeof fetch = async (input, init) => {

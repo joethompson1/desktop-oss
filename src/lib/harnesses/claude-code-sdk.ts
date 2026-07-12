@@ -1,7 +1,7 @@
-// Claude Code adapter — runs the official `@anthropic-ai/claude-agent-sdk`
+// Claude Code harness — runs the official `@anthropic-ai/claude-agent-sdk`
 // in a bundled Node/Bun sidecar and surfaces its event stream as a delegate.
 //
-// Implementation choice (per "Adapter conventions" in CLAUDE.md): the SDK
+// Implementation choice (per "Harness conventions" in CLAUDE.md): the SDK
 // transport is preferred over wrapping the `claude` CLI binary. Calling
 // query() directly gives us typed `SDKMessage` events, graceful
 // cancellation, and first-class permission gating via `canUseTool` —
@@ -17,18 +17,18 @@
 //   `claude` in a terminal, just inside the orchestrator's run surface.
 //
 // Architecture:
-//   TS adapter → cli_stream (Rust) → `node sidecar/claude-agent/index.mjs <req>`
+//   TS harness → cli_stream (Rust) → `node sidecar/claude-agent/index.mjs <req>`
 //     → SDK query() → NDJSON of SDKMessage to stdout → parsed back here.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
-  AdapterConfig,
-  AdapterType,
+  HarnessConfig,
+  HarnessType,
   ChatMessage,
-  LLMAdapter,
+  LLMHarness,
   ProbeResult,
   StreamChatParams,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 
 interface CliStreamEvent {
@@ -130,13 +130,13 @@ type SDKMessage =
   | SDKErrorPassthrough
   | ({ type: string } & SDKMessageWithSession & { [key: string]: unknown });
 
-export class ClaudeCodeSDKAdapter implements LLMAdapter {
-  readonly type: AdapterType = "claude-code";
+export class ClaudeCodeSDKHarness implements LLMHarness {
+  readonly type: HarnessType = "claude-code";
   readonly id: string;
   readonly name: string;
-  readonly config: AdapterConfig;
+  readonly config: HarnessConfig;
 
-  constructor(config: AdapterConfig) {
+  constructor(config: HarnessConfig) {
     this.id = config.id;
     this.name = config.name;
     this.config = config;
@@ -168,7 +168,7 @@ export class ClaudeCodeSDKAdapter implements LLMAdapter {
       return;
     }
 
-    // Per-call override wins over the adapter's configured default.
+    // Per-call override wins over the harness's configured default.
     const request = buildRequest(
       params,
       params.model ?? this.config.model,
@@ -547,7 +547,7 @@ function buildRequest(
   return {
     prompt: buildPromptFromMessages(params.messages),
     options: {
-      // These three presets are what makes the adapter behave identically
+      // These three presets are what makes the harness behave identically
       // to a `claude` CLI session: full system prompt (with dynamic
       // sections — cwd, git status, ~/.claude/CLAUDE.md, project
       // CLAUDE.md), full default tool set, no interactive permission

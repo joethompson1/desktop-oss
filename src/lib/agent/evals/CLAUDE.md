@@ -74,7 +74,7 @@ src/lib/agent/evals/
 ├── fixtures/
 │   ├── conversation-builder.ts     # seedConversation, delegationFollowthroughTurns
 │   ├── eval-orchestrator-model.ts  # build LanguageModelV3 from env vars
-│   ├── mock-delegate-adapter.ts    # scripted LLMAdapter for the delegate
+│   ├── mock-delegate-harness.ts    # scripted LLMHarness for the delegate
 │   └── snapshots/                  # captured prod conversations (gitignored)
 ├── snapshot/
 │   ├── CLAUDE.md                   # capture + replay workflow
@@ -122,7 +122,7 @@ learn in either project ports cleanly.
 - **Tauri commands (`@tauri-apps/api/core`):** stubbed to throw. If a
   scenario actually needs `read_file` or `list_files` to succeed, mock
   it explicitly inside the scenario.
-- **Delegate adapter:** scripted (see `mock-delegate-adapter.ts`). The
+- **Delegate harness:** scripted (see `mock-delegate-harness.ts`). The
   orchestrator calls it through the real `runDelegate` path, so chunks
   are persisted to the in-memory DB just like in production.
 - **Orchestrator model:** real. The whole point.
@@ -146,7 +146,7 @@ flow.
 
 What's deliberately not here yet:
 
-- **Cross-adapter coverage.** Today scenarios hardcode one provider via
+- **Cross-harness coverage.** Today scenarios hardcode one provider via
   env vars. A matrix scenario that loops over `[anthropic,
   openai-compatible]` is the natural next step once we have a second
   failing case.

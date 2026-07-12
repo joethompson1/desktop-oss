@@ -1,4 +1,4 @@
-import type { LLMAdapter, ChatMessage } from "$lib/types/adapter";
+import type { LLMHarness, ChatMessage } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import type { DelegateResult, RunStatus } from "$lib/types/run";
 import {
@@ -6,7 +6,7 @@ import {
   createRun,
   getRun,
   getRunChunks,
-  updateAdapterSessionId,
+  updateHarnessSessionId,
   updateContextSummary,
   updateRunStatus,
 } from "$lib/db/runs";
@@ -35,11 +35,11 @@ export interface DelegateInput {
    *  conversation — if a name is reused the most recent run wins. */
   name?: string;
   /** Optional model override for this run. Threads through to the
-   *  adapter's `streamChat(model)` so the orchestrator can pick a
-   *  different model than the adapter's configured default — e.g.
+   *  harness's `streamChat(model)` so the orchestrator can pick a
+   *  different model than the harness's configured default — e.g.
    *  spawn Codex with gpt-5.5 for planning then Codex with the local
-   *  Qwen3 profile for implementation, on the same adapter. Ignored
-   *  by adapters that don't support per-call model overrides. */
+   *  Qwen3 profile for implementation, on the same harness. Ignored
+   *  by harnesses that don't support per-call model overrides. */
   model?: string;
   /** Working directory of the spawning session. Surfaced in the brief so
    *  the delegate resolves filesystem work against the same root the
@@ -54,7 +54,7 @@ export interface DelegateInput {
 }
 
 export interface DelegateRunnerDeps {
-  resolveDelegateAdapter: () => LLMAdapter | null;
+  resolveDelegateHarness: () => LLMHarness | null;
   /** Conversation (session) the spawning orchestrator belongs to. The run
    *  is created under this id so it nests beneath the right session in the
    *  sidebar. Falls back to the legacy singleton when absent (e.g. tests). */
@@ -67,19 +67,19 @@ export async function runDelegate(
   input: DelegateInput,
   deps: DelegateRunnerDeps,
 ): Promise<DelegateResult> {
-  const adapter = deps.resolveDelegateAdapter();
-  if (!adapter) {
+  const harness = deps.resolveDelegateHarness();
+  if (!harness) {
     throw new Error(
-      "No delegate adapter configured. Add one in Settings and mark it as the delegate default.",
+      "No delegate harness configured. Add one in Settings and mark it as the delegate default.",
     );
   }
   // eslint-disable-next-line no-console
-  console.debug("[delegate] dispatching to adapter:", {
-    id: adapter.id,
-    name: adapter.name,
-    type: adapter.type,
-    baseUrl: adapter.config.baseUrl,
-    model: adapter.config.model,
+  console.debug("[delegate] dispatching to harness:", {
+    id: harness.id,
+    name: harness.name,
+    type: harness.type,
+    baseUrl: harness.config.baseUrl,
+    model: harness.config.model,
   });
 
   const runId =
@@ -95,8 +95,8 @@ export async function runDelegate(
     toolCallId: deps.toolCallId,
     name: input.name,
     title,
-    delegateAdapterId: adapter.id,
-    delegateType: adapter.type,
+    delegateHarnessId: harness.id,
+    delegateType: harness.type,
   });
   await updateRunStatus(runId, "RUNNING");
 
@@ -112,16 +112,16 @@ export async function runDelegate(
   let textBuffer: Record<string, string> = {};
 
   try {
-    for await (const chunk of adapter.streamChat({
+    for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
       ...(input.model ? { model: input.model } : {}),
       onSessionInfo: ({ sessionId }) => {
-        // Fire-and-forget — store the adapter's session token so
+        // Fire-and-forget — store the harness's session token so
         // follow-up turns can resume the same provider-side session.
         // Failures here are non-fatal (we'd just continue without
         // resume support).
-        void updateAdapterSessionId(runId, sessionId).catch(() => {});
+        void updateHarnessSessionId(runId, sessionId).catch(() => {});
       },
     })) {
       if (chunk.type === "text-start") {
@@ -196,7 +196,7 @@ export async function runDelegate(
       conversationId,
       status,
       summary: assistantText.trim() || errorText || null,
-      adapterName: adapter.name,
+      harnessName: harness.name,
     });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -206,7 +206,7 @@ export async function runDelegate(
   // Non-fatal: if this run is already long enough to warrant a rolling
   // summary, generate one now so subsequent continuations stay bounded.
   const allMessages = await loadRunMessages(runId);
-  await maybeUpdateContextSummary(runId, allMessages, adapter).catch(() => {});
+  await maybeUpdateContextSummary(runId, allMessages, harness).catch(() => {});
 
   return {
     runId,
@@ -214,7 +214,7 @@ export async function runDelegate(
     summary,
     filesChanged,
     durationMs,
-    adapter: { id: adapter.id, name: adapter.name, type: adapter.type },
+    harness: { id: harness.id, name: harness.name, type: harness.type },
   };
 }
 
@@ -335,7 +335,7 @@ async function loadRunMessages(runId: string): Promise<ChatMessage[]> {
  * Given the full reconstructed message list for a run, apply the rolling
  * context window: if there is an existing contextSummary and more than
  * CONTEXT_TAIL messages, replace the older portion with a synthetic
- * summary pair so the adapter call stays within a predictable token budget.
+ * summary pair so the harness call stays within a predictable token budget.
  *
  * When no contextSummary exists (the run is still short), returns the
  * messages unchanged.
@@ -364,7 +364,7 @@ function buildBoundedMessages(
 
 /**
  * After each delegate turn, check whether the run has grown long enough
- * to warrant a rolling context summary. If so, call the adapter with a
+ * to warrant a rolling context summary. If so, call the harness with a
  * compact summarisation prompt and persist the result.
  *
  * Only the portion of history older than CONTEXT_TAIL messages is
@@ -378,7 +378,7 @@ function buildBoundedMessages(
 async function maybeUpdateContextSummary(
   runId: string,
   allMessages: ChatMessage[],
-  adapter: LLMAdapter,
+  harness: LLMHarness,
 ): Promise<void> {
   if (allMessages.length <= SUMMARY_THRESHOLD) return;
 
@@ -390,7 +390,7 @@ async function maybeUpdateContextSummary(
   let summaryText = "";
   const textBuffer: Record<string, string> = {};
 
-  for await (const chunk of adapter.streamChat({
+  for await (const chunk of harness.streamChat({
     messages: [
       {
         role: "user",
@@ -422,7 +422,7 @@ export interface ContinueRunInput {
 }
 
 export interface ContinueRunDeps {
-  resolveDelegateAdapter: () => LLMAdapter | null;
+  resolveDelegateHarness: () => LLMHarness | null;
 }
 
 /**
@@ -439,25 +439,25 @@ export async function continueRun(
   input: ContinueRunInput,
   deps: ContinueRunDeps,
 ): Promise<{ status: RunStatus; summary: string }> {
-  const adapter = deps.resolveDelegateAdapter();
-  if (!adapter) {
+  const harness = deps.resolveDelegateHarness();
+  if (!harness) {
     throw new Error(
-      "No delegate adapter configured. Add one in Settings and mark it as the delegate default.",
+      "No delegate harness configured. Add one in Settings and mark it as the delegate default.",
     );
   }
 
   const run = await getRun(input.runId);
-  // If the adapter recorded a session token on the first turn, lean on
+  // If the harness recorded a session token on the first turn, lean on
   // its native session-resume: skip the reconstructed-history replay
-  // and let the provider restore state from disk. The adapter receives
+  // and let the provider restore state from disk. The harness receives
   // only the new user message; the prior conversation, tool scratchpad
   // and file checkpoints come back via the session restore on the
   // provider side. This is dramatically cheaper (no re-read, no
   // re-tokenisation of the history) than the replay path used by
-  // sessionless adapters.
-  const adapterSessionId = run?.adapterSessionId;
+  // sessionless harnesses.
+  const harnessSessionId = run?.harnessSessionId;
   const history = await loadRunMessages(input.runId);
-  const messages: ChatMessage[] = adapterSessionId
+  const messages: ChatMessage[] = harnessSessionId
     ? [{ role: "user", content: input.userMessage }]
     : [
         ...buildBoundedMessages(history, run?.contextSummary),
@@ -474,12 +474,12 @@ export async function continueRun(
   const textBuffer: Record<string, string> = {};
 
   try {
-    for await (const chunk of adapter.streamChat({
+    for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
-      resumeSessionId: adapterSessionId,
+      resumeSessionId: harnessSessionId,
       onSessionInfo: ({ sessionId }) => {
-        void updateAdapterSessionId(input.runId, sessionId).catch(() => {});
+        void updateHarnessSessionId(input.runId, sessionId).catch(() => {});
       },
     })) {
       if (chunk.type === "text-start") {
@@ -540,7 +540,7 @@ export async function continueRun(
   await updateRunStatus(input.runId, status, { summary });
 
   const updatedMessages = await loadRunMessages(input.runId);
-  await maybeUpdateContextSummary(input.runId, updatedMessages, adapter).catch(() => {});
+  await maybeUpdateContextSummary(input.runId, updatedMessages, harness).catch(() => {});
 
   return { status, summary };
 }
@@ -548,7 +548,7 @@ export async function continueRun(
 export interface StreamDelegateContinueInput {
   runId: string;
   userMessage: string;
-  resolveDelegateAdapter: () => LLMAdapter | null;
+  resolveDelegateHarness: () => LLMHarness | null;
 }
 
 /**
@@ -559,17 +559,17 @@ export interface StreamDelegateContinueInput {
  * Uses the same bounded context reconstruction as continueRun: the prior
  * conversation is represented as contextSummary + last CONTEXT_TAIL messages
  * rather than the full raw history, so very long runs do not balloon the
- * adapter's context window.
+ * harness's context window.
  */
 export async function* streamDelegateContinue(
   input: StreamDelegateContinueInput,
 ): AsyncIterable<ChatStreamPart> {
-  const adapter = input.resolveDelegateAdapter();
-  if (!adapter) {
+  const harness = input.resolveDelegateHarness();
+  if (!harness) {
     yield {
       type: "error",
       error:
-        "No delegate adapter configured. Add one in Settings and mark it as the delegate default.",
+        "No delegate harness configured. Add one in Settings and mark it as the delegate default.",
     };
     return;
   }
@@ -581,11 +581,11 @@ export async function* streamDelegateContinue(
   await updateRunStatus(input.runId, "RUNNING");
 
   const run = await getRun(input.runId);
-  const adapterSessionId = run?.adapterSessionId;
-  // Same fork as continueRun: if the adapter has a recorded session
+  const harnessSessionId = run?.harnessSessionId;
+  // Same fork as continueRun: if the harness has a recorded session
   // token, send only the new user message and let the provider restore
   // state. Otherwise, replay the bounded history.
-  const messages = adapterSessionId
+  const messages = harnessSessionId
     ? [{ role: "user" as const, content: input.userMessage }]
     : buildBoundedMessages(
         await loadRunMessages(input.runId),
@@ -599,12 +599,12 @@ export async function* streamDelegateContinue(
   const textBuffer: Record<string, string> = {};
 
   try {
-    for await (const chunk of adapter.streamChat({
+    for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
-      resumeSessionId: adapterSessionId,
+      resumeSessionId: harnessSessionId,
       onSessionInfo: ({ sessionId }) => {
-        void updateAdapterSessionId(input.runId, sessionId).catch(() => {});
+        void updateHarnessSessionId(input.runId, sessionId).catch(() => {});
       },
     })) {
       yield chunk;
@@ -667,7 +667,7 @@ export async function* streamDelegateContinue(
   await updateRunStatus(input.runId, status, { summary });
 
   const updatedMessages = await loadRunMessages(input.runId);
-  await maybeUpdateContextSummary(input.runId, updatedMessages, adapter).catch(() => {});
+  await maybeUpdateContextSummary(input.runId, updatedMessages, harness).catch(() => {});
 }
 
 /**

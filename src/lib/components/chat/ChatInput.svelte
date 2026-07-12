@@ -101,7 +101,7 @@
 
   // Pull skills from the live discovery store; the orchestrator
   // surface sees everything, delegate surfaces filter to (local) ∪
-  // (their adapter's source family).
+  // (their harness's source family).
   const allSkills = $derived<Skill[]>(
     sourceFilter === null
       ? skillsStore.all

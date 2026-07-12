@@ -1,18 +1,18 @@
-// Scripted LLMAdapter that stands in for a real delegate. The orchestrator
-// calls `delegate_task` → `runDelegate` → `adapter.streamChat()`; this
+// Scripted LLMHarness that stands in for a real delegate. The orchestrator
+// calls `delegate_task` → `runDelegate` → `harness.streamChat()`; this
 // mock returns a canned sequence of chat-stream parts so the test
 // completes without contacting an external model.
 //
-// The adapter records every `streamChat()` call for the scorer/test to
+// The harness records every `streamChat()` call for the scorer/test to
 // inspect — useful for asserting "the delegate received a brief that
 // mentioned the file we pre-seeded".
 
 import type {
-  LLMAdapter,
-  AdapterConfig,
+  LLMHarness,
+  HarnessConfig,
   ProbeResult,
   StreamChatParams,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 
 export interface MockDelegateCall {
@@ -21,7 +21,7 @@ export interface MockDelegateCall {
   startedAt: number;
 }
 
-export interface MockDelegateAdapterOptions {
+export interface MockDelegateHarnessOptions {
   id?: string;
   name?: string;
   /** Text the mock delegate "replies" with. Streamed in one chunk so the
@@ -35,14 +35,14 @@ export interface MockDelegateAdapterOptions {
 }
 
 /**
- * Build a scripted delegate adapter with public access to the call log.
+ * Build a scripted delegate harness with public access to the call log.
  *
- * Returns `{ adapter, calls }` — append-only `calls` array updated each
+ * Returns `{ harness, calls }` — append-only `calls` array updated each
  * time the orchestrator invokes the delegate.
  */
-export function makeMockDelegateAdapter(
-  opts: MockDelegateAdapterOptions = {},
-): { adapter: LLMAdapter; calls: MockDelegateCall[] } {
+export function makeMockDelegateHarness(
+  opts: MockDelegateHarnessOptions = {},
+): { harness: LLMHarness; calls: MockDelegateCall[] } {
   const id = opts.id ?? "mock-delegate";
   const name = opts.name ?? "Mock Delegate";
   const reply =
@@ -52,7 +52,7 @@ export function makeMockDelegateAdapter(
   const latencyMs = opts.latencyMs ?? 0;
   const calls: MockDelegateCall[] = [];
 
-  const config: AdapterConfig = {
+  const config: HarnessConfig = {
     id,
     type: "openai-compatible",
     name,
@@ -60,7 +60,7 @@ export function makeMockDelegateAdapter(
     model: "mock-delegate-v1",
   };
 
-  const adapter: LLMAdapter = {
+  const harness: LLMHarness = {
     id,
     name,
     type: "openai-compatible",
@@ -78,7 +78,7 @@ export function makeMockDelegateAdapter(
     },
   };
 
-  return { adapter, calls };
+  return { harness, calls };
 }
 
 async function* scriptedStream(

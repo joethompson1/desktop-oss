@@ -698,7 +698,7 @@ enum HttpStreamEvent {
 }
 
 /// Server-to-server style HTTP request that streams the response body
-/// back to the frontend over a Tauri Channel. Used by the LLM adapters
+/// back to the frontend over a Tauri Channel. Used by the LLM harnesses
 /// to talk to api.anthropic.com etc. without going through the
 /// webview's fetch (which forwards Origin and gets classified as a CORS
 /// request — some Anthropic orgs deny CORS at the policy level).
@@ -811,7 +811,7 @@ enum CliStreamEvent {
 }
 
 /// Spawn a CLI as a subprocess and stream its stdout/stderr to the JS
-/// frontend. Used by the CLI sidecar adapters (claude / opencode /
+/// frontend. Used by the CLI sidecar harnesses (claude / opencode /
 /// codex) so the orchestrator's delegate can be a real coding agent
 /// with full tool access via its own CLI.
 ///

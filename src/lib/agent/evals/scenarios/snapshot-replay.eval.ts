@@ -35,8 +35,8 @@ import type { RecordedDelegateResponse } from "../snapshot/types.js";
 
 const { runEvalLocally } = await import("../runner.js");
 const { evalAgentTurn } = await import("../eval-agent-turn.js");
-const { makeMockDelegateAdapter } = await import(
-  "../fixtures/mock-delegate-adapter.js"
+const { makeMockDelegateHarness } = await import(
+  "../fixtures/mock-delegate-harness.js"
 );
 const { buildEvalOrchestratorModel } = await import(
   "../fixtures/eval-orchestrator-model.js"
@@ -87,7 +87,7 @@ async function runReplay(
   )) as {
     buildSnapshotConversation: (conversationId: string) => Promise<void>;
     snapshotRecordedResponses: Record<string, RecordedDelegateResponse>;
-    snapshotAdapterConfigs: import("$lib/types/adapter").AdapterConfig[];
+    snapshotHarnessConfigs: import("$lib/types/harness").HarnessConfig[];
     snapshotMetadata: { capturedAt: string; conversationId: string };
   };
 
@@ -98,7 +98,7 @@ async function runReplay(
   const { model, isAnthropic, provider, modelId } =
     buildEvalOrchestratorModel();
 
-  const { adapter: mockDelegate } = makeMockDelegateAdapter({
+  const { harness: mockDelegate } = makeMockDelegateHarness({
     id: "snapshot-delegate",
     name: "SnapshotDelegate",
   });
@@ -112,14 +112,14 @@ async function runReplay(
     const key = stableHash(brief);
     const recorded = snapshotModule.snapshotRecordedResponses[key];
     if (recorded) {
-      // Re-create the scripted adapter with the recorded reply baked in.
-      const { adapter } = makeMockDelegateAdapter({
+      // Re-create the scripted harness with the recorded reply baked in.
+      const { harness } = makeMockDelegateHarness({
         id: "snapshot-delegate",
         name: "SnapshotDelegate",
         reply: recorded.reply,
         filesChanged: recorded.filesChanged,
       });
-      return adapter.streamChat(params);
+      return harness.streamChat(params);
     }
     return origStream(params);
   };
@@ -157,8 +157,8 @@ async function runReplay(
         message: message || "",
         orchestratorModel: model,
         isAnthropic,
-        resolveDelegateAdapter: () => mockDelegate,
-        delegateRosterConfigs: snapshotModule.snapshotAdapterConfigs,
+        resolveDelegateHarness: () => mockDelegate,
+        delegateRosterConfigs: snapshotModule.snapshotHarnessConfigs,
       });
     },
     scores: [

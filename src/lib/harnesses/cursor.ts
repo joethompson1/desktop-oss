@@ -1,7 +1,7 @@
-// Cursor adapter — runs the official `@cursor/sdk` in a bundled
+// Cursor harness — runs the official `@cursor/sdk` in a bundled
 // Node/Bun sidecar and surfaces its event stream as a delegate.
 //
-// Implementation choice (per "Adapter conventions" in CLAUDE.md): the
+// Implementation choice (per "Harness conventions" in CLAUDE.md): the
 // SDK transport is preferred over wrapping the `cursor-agent` CLI
 // binary. Calling `Agent.create()` / `agent.send()` directly:
 //   - skips the ~40s cold-start tax that `cursor-agent -p` pays on
@@ -14,20 +14,20 @@
 //     pass it back as `resumeAgentId` on continuations.
 //
 // Auth: requires a `CURSOR_API_KEY` generated at Cursor Dashboard →
-// Integrations → User API Keys. Stored in the per-adapter keychain
-// like every other adapter's API key. The sidecar receives it as a
+// Integrations → User API Keys. Stored in the per-harness keychain
+// like every other harness's API key. The sidecar receives it as a
 // field in the request JSON, not via env, so we don't leak it to
 // the subprocess's parent environment.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
-  AdapterConfig,
-  AdapterType,
+  HarnessConfig,
+  HarnessType,
   ChatMessage,
-  LLMAdapter,
+  LLMHarness,
   ProbeResult,
   StreamChatParams,
-} from "$lib/types/adapter";
+} from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 
 interface CliStreamEvent {
@@ -53,7 +53,7 @@ interface RawRuntime {
 }
 
 /** Envelope shapes emitted by sidecar/cursor-agent/index.mjs. The
- *  sidecar wraps every yielded payload so the adapter doesn't have to
+ *  sidecar wraps every yielded payload so the harness doesn't have to
  *  guess whether a line is a low-level `InteractionUpdate`, a higher-
  *  level `SDKMessage`, or a lifecycle marker. */
 type SidecarEnvelope =
@@ -111,15 +111,15 @@ type SdkMessage =
     }
   | { type: string; [k: string]: unknown };
 
-export class CursorAdapter implements LLMAdapter {
-  readonly type: AdapterType = "cursor";
+export class CursorHarness implements LLMHarness {
+  readonly type: HarnessType = "cursor";
   readonly id: string;
   readonly name: string;
-  readonly config: AdapterConfig;
+  readonly config: HarnessConfig;
   readonly #getApiKey: () => Promise<string | null>;
 
   constructor(
-    config: AdapterConfig,
+    config: HarnessConfig,
     deps: { getApiKey: () => Promise<string | null> },
   ) {
     this.id = config.id;
@@ -139,7 +139,7 @@ export class CursorAdapter implements LLMAdapter {
       yield {
         type: "error",
         error:
-          "Cursor adapter has no API key set. Generate one at Cursor Dashboard → Integrations → User API Keys and add it in Settings.",
+          "Cursor harness has no API key set. Generate one at Cursor Dashboard → Integrations → User API Keys and add it in Settings.",
       };
       return;
     }
@@ -169,13 +169,13 @@ export class CursorAdapter implements LLMAdapter {
       options: {
         apiKey,
         // Per-call override (from `StreamChatParams.model`) wins over
-        // the adapter's configured default — lets the orchestrator
+        // the harness's configured default — lets the orchestrator
         // pick a different Cursor model per delegate spawn (composer-2
         // for fast edits, gpt-5.3-codex-high for hard refactors, etc.).
         ...((params.model ?? this.config.model)
           ? { model: params.model ?? this.config.model }
           : {}),
-        // Workspace cwd is intentionally NOT set at adapter-config
+        // Workspace cwd is intentionally NOT set at harness-config
         // level — the orchestrator picks per-delegation cwd via the
         // delegate_task tool. See the "Per-delegation model +
         // workspace" backlog item.

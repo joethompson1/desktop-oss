@@ -23,7 +23,7 @@ import type { RunStatus } from "$lib/types/run";
 export type RunChunkListener = () => void;
 export type RunStatusListener = (status: RunStatus) => void;
 /** Live token delta callback. Fires for every `text-delta` event the
- *  adapter yields while a delegate is running, BEFORE the buffered
+ *  harness yields while a delegate is running, BEFORE the buffered
  *  segment is persisted as a chunk. Lets the passive run-detail
  *  page render tokens as they arrive (same UX as the orchestrator
  *  chat) without persisting one row per token. */
@@ -50,10 +50,10 @@ export interface RunCompletionEvent {
    *  no text. The orchestrator uses this for ambient awareness; for
    *  authoritative detail it calls get_delegate_history. */
   summary: string | null;
-  /** Display name of the adapter that ran the delegate. Surfaced in
+  /** Display name of the harness that ran the delegate. Surfaced in
    *  the notification so the orchestrator knows which transport
    *  produced the work. */
-  adapterName: string;
+  harnessName: string;
 }
 export type RunCompletionListener = (event: RunCompletionEvent) => void;
 

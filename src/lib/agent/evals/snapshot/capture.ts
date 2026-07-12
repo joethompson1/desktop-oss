@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 import type { UIChatTurn } from "$lib/types/chat";
 import type { ChunkRow, RunStatus, RunSummary } from "$lib/types/run";
-import type { AdapterConfig } from "$lib/types/adapter";
+import type { HarnessConfig } from "$lib/types/harness";
 
 import type {
   CapturedSnapshot,
@@ -135,7 +135,7 @@ export async function captureSnapshot(
       runChunks,
       orchestratorPromptOverride: settings["prompts.orchestrator"] ?? null,
       delegatePromptOverride: settings["prompts.delegate"] ?? null,
-      adapterConfigs: extractAdapterConfigs(settings),
+      harnessConfigs: extractHarnessConfigs(settings),
       recordedDelegateResponses: extractDelegateResponses(runs, runChunks),
     };
   } finally {
@@ -231,23 +231,23 @@ function readSettings(db: DatabaseSync): Record<string, string> {
 }
 
 /**
- * Adapter configs land in the `settings.adapters` blob as an array of
- * `AdapterConfig`. Other apps store them per-key — we accept both shapes
+ * Harness configs land in the `settings["harnesses.list"]` blob as an array
+ * of `HarnessConfig`. Other apps store them per-key — we accept both shapes
  * so the function survives a future refactor.
  *
  * API keys are NEVER in the settings table (they live in plugin-store's
  * encrypted credentials file), so this is already credential-safe.
  */
-function extractAdapterConfigs(
+function extractHarnessConfigs(
   settings: Record<string, unknown>,
-): AdapterConfig[] {
-  const blob = settings["adapters"];
-  if (Array.isArray(blob)) return blob as AdapterConfig[];
-  // Per-key shape: settings.adapter:<id> → AdapterConfig
-  const out: AdapterConfig[] = [];
+): HarnessConfig[] {
+  const blob = settings["harnesses.list"];
+  if (Array.isArray(blob)) return blob as HarnessConfig[];
+  // Per-key shape: settings.harness:<id> → HarnessConfig
+  const out: HarnessConfig[] = [];
   for (const [key, value] of Object.entries(settings)) {
-    if (key.startsWith("adapter:") && value && typeof value === "object") {
-      out.push(value as AdapterConfig);
+    if (key.startsWith("harness:") && value && typeof value === "object") {
+      out.push(value as HarnessConfig);
     }
   }
   return out;
@@ -287,8 +287,8 @@ function extractDelegateResponses(
         run.completedAt && run.createdAt
           ? Math.max(0, Date.parse(run.completedAt) - Date.parse(run.createdAt))
           : 0,
-      adapterName: run.delegateAdapterId ?? null,
-      adapterType: run.delegateType ?? null,
+      harnessName: run.delegateHarnessId ?? null,
+      harnessType: run.delegateType ?? null,
     };
   }
   return out;
@@ -303,12 +303,12 @@ function rowToRunSummary(r: RunRow): RunSummary {
     name: r.name ?? undefined,
     title: r.title,
     status: r.status as RunStatus,
-    delegateAdapterId: r.delegate_adapter_id ?? undefined,
+    delegateHarnessId: r.delegate_adapter_id ?? undefined,
     delegateType: r.delegate_type ?? undefined,
     exitCode: r.exit_code ?? undefined,
     summary: r.summary ?? undefined,
     contextSummary: r.context_summary ?? undefined,
-    adapterSessionId: r.adapter_session_id ?? undefined,
+    harnessSessionId: r.adapter_session_id ?? undefined,
     filesChanged: r.files_changed_json
       ? (JSON.parse(r.files_changed_json) as string[])
       : undefined,

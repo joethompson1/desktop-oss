@@ -1,19 +1,25 @@
-// Adapter store: knows about configured LLM adapters and which one is the
+// Harness store: knows about configured LLM harnesses and which one is the
 // active orchestrator vs the active delegate. Persists configs to SQLite
-// settings; API keys stay in the per-adapter credential store.
+// settings; API keys stay in the per-harness credential store.
 
-import type { AdapterConfig, LLMAdapter } from "$lib/types/adapter";
-import { createAdapter } from "$lib/adapters";
+import type { HarnessConfig, LLMHarness } from "$lib/types/harness";
+import { createHarness } from "$lib/harnesses";
 import { getSetting, setSetting } from "$lib/db/settings";
 
-const ADAPTERS_SETTING_KEY = "adapters.list";
+const HARNESSES_SETTING_KEY = "harnesses.list";
+// Pre-rename key. Existing installs have their configured harnesses
+// stored under this key — read it as a one-time fallback on hydrate so
+// nobody's saved configuration silently disappears. We never write to
+// it again; once hydrate() finds data here it immediately persists it
+// under HARNESSES_SETTING_KEY and all subsequent reads use that.
+const LEGACY_ADAPTERS_SETTING_KEY = "adapters.list";
 
-class AdaptersStore {
-  #configs = $state<AdapterConfig[]>([]);
+class HarnessesStore {
+  #configs = $state<HarnessConfig[]>([]);
   #hydrated = $state<boolean>(false);
   #hydrating = $state<boolean>(false);
 
-  get configs(): AdapterConfig[] {
+  get configs(): HarnessConfig[] {
     return this.#configs;
   }
 
@@ -21,7 +27,7 @@ class AdaptersStore {
     return this.#hydrated;
   }
 
-  get orchestratorConfig(): AdapterConfig | null {
+  get orchestratorConfig(): HarnessConfig | null {
     return (
       this.#configs.find((c) => c.isOrchestratorDefault) ??
       this.#configs[0] ??
@@ -29,31 +35,31 @@ class AdaptersStore {
     );
   }
 
-  get delegateConfig(): AdapterConfig | null {
+  get delegateConfig(): HarnessConfig | null {
     return (
       this.#configs.find((c) => c.isDelegateDefault) ??
       this.orchestratorConfig
     );
   }
 
-  resolveOrchestrator(): LLMAdapter | null {
+  resolveOrchestrator(): LLMHarness | null {
     const cfg = this.orchestratorConfig;
-    return cfg ? createAdapter(cfg) : null;
+    return cfg ? createHarness(cfg) : null;
   }
 
-  resolveDelegate(): LLMAdapter | null {
+  resolveDelegate(): LLMHarness | null {
     const cfg = this.delegateConfig;
-    return cfg ? createAdapter(cfg) : null;
+    return cfg ? createHarness(cfg) : null;
   }
 
-  /** Look up an adapter by exact name or id. Returns the instantiated
-   *  adapter or null. Used when the orchestrator's `delegate_task` tool
-   *  call specifies which delegate to route to via its `adapter` field. */
-  resolveByNameOrId(nameOrId: string): LLMAdapter | null {
+  /** Look up a harness by exact name or id. Returns the instantiated
+   *  harness or null. Used when the orchestrator's `delegate_task` tool
+   *  call specifies which delegate to route to via its `harness` field. */
+  resolveByNameOrId(nameOrId: string): LLMHarness | null {
     const cfg = this.#configs.find(
       (c) => c.id === nameOrId || c.name === nameOrId,
     );
-    return cfg ? createAdapter(cfg) : null;
+    return cfg ? createHarness(cfg) : null;
   }
 
   /** Plain config matches (no instantiation). Handy for the orchestrator
@@ -61,9 +67,9 @@ class AdaptersStore {
    *  the orchestrator shouldn't delegate to itself (that's just doing
    *  more work in the same agent loop with extra serialization overhead).
    *  If a user genuinely wants to use the same provider for both roles,
-   *  they configure two adapter entries — one as orchestrator, one as
+   *  they configure two harness entries — one as orchestrator, one as
    *  delegate. */
-  findConfigsByDelegateRole(): AdapterConfig[] {
+  findConfigsByDelegateRole(): HarnessConfig[] {
     const orchId = this.orchestratorConfig?.id;
     return orchId
       ? this.#configs.filter((c) => c.id !== orchId)
@@ -74,10 +80,23 @@ class AdaptersStore {
     if (this.#hydrated || this.#hydrating) return;
     this.#hydrating = true;
     try {
-      const stored = await getSetting<AdapterConfig[]>(ADAPTERS_SETTING_KEY);
-      const { configs, mutated } = migrateLegacyAdapterTypes(stored ?? []);
+      let stored = await getSetting<HarnessConfig[]>(HARNESSES_SETTING_KEY);
+      let mustPersist = false;
+      if (stored === null) {
+        // First read since the adapter → harness rename: fall back to
+        // the legacy key so an existing install's configured harnesses
+        // still show up. Re-saved under the new key below.
+        const legacy = await getSetting<HarnessConfig[]>(
+          LEGACY_ADAPTERS_SETTING_KEY,
+        );
+        if (legacy !== null) {
+          stored = legacy;
+          mustPersist = true;
+        }
+      }
+      const { configs, mutated } = migrateLegacyHarnessTypes(stored ?? []);
       this.#configs = configs;
-      if (mutated) await this.save();
+      if (mutated || mustPersist) await this.save();
     } catch {
       this.#configs = [];
     } finally {
@@ -87,10 +106,10 @@ class AdaptersStore {
   }
 
   async save(): Promise<void> {
-    await setSetting(ADAPTERS_SETTING_KEY, this.#configs);
+    await setSetting(HARNESSES_SETTING_KEY, this.#configs);
   }
 
-  async upsert(config: AdapterConfig): Promise<void> {
+  async upsert(config: HarnessConfig): Promise<void> {
     const idx = this.#configs.findIndex((c) => c.id === config.id);
     if (idx === -1) {
       this.#configs = [...this.#configs, config];
@@ -124,19 +143,19 @@ class AdaptersStore {
   }
 }
 
-export const adapters = new AdaptersStore();
+export const harnesses = new HarnessesStore();
 
-/** Normalise legacy adapter-type strings to the current brand-only set:
+/** Normalise legacy harness-type strings to the current brand-only set:
  *  `claude-code-sdk` collapses into `claude-code`; the discontinued CLI
  *  sidecar types (`claude-code-cli`, `opencode-cli`, `codex-cli`) are
  *  dropped — they have no replacement implementation in the registry.
  *  Returns the normalised list plus a flag indicating whether anything
  *  changed (so the caller can persist the new shape exactly once). */
-function migrateLegacyAdapterTypes(
-  raw: AdapterConfig[],
-): { configs: AdapterConfig[]; mutated: boolean } {
+function migrateLegacyHarnessTypes(
+  raw: HarnessConfig[],
+): { configs: HarnessConfig[]; mutated: boolean } {
   let mutated = false;
-  const out: AdapterConfig[] = [];
+  const out: HarnessConfig[] = [];
   for (const cfg of raw) {
     const t = cfg.type as string;
     if (t === "claude-code-sdk") {
@@ -149,7 +168,7 @@ function migrateLegacyAdapterTypes(
     ) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[adapters] dropping legacy "${t}" adapter "${cfg.name}" — that transport was removed; reconfigure with the SDK-based "claude-code" or MCP-based "codex" adapter instead.`,
+        `[harnesses] dropping legacy "${t}" harness "${cfg.name}" — that transport was removed; reconfigure with the SDK-based "claude-code" or MCP-based "codex" harness instead.`,
       );
       mutated = true;
     } else {
