@@ -36,6 +36,15 @@ export function installEvalMocks(): void {
             `If your scenario needs a filesystem tool to fire, stub it explicitly.`,
         );
       },
+      // `Channel` is imported (not just `invoke`) by modules in the agent
+      // graph — e.g. `$lib/skills/rust`, which `loop.ts` pulls in. The mock
+      // must export it or the import fails with "does not provide an export
+      // named 'Channel'". A no-op class is enough: evals never stream over a
+      // real channel (the orchestrator model uses the SDK's own fetch, the
+      // delegate is a scripted mock).
+      Channel: class {
+        onmessage: ((message: unknown) => void) | null = null;
+      },
     },
   });
 
