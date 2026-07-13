@@ -6,7 +6,7 @@
 // Claude Code and Codex are delegate-only because they run their own
 // internal agent loops.
 
-import type { ChatStreamPart } from "./chat";
+import type { HarnessStreamPart } from "./run";
 
 /** Brand-level harness identity. The internal type ID is intentionally
  *  brand-only (no `-sdk` / `-cli` suffixes) — each brand maps to a
@@ -117,6 +117,9 @@ export interface LLMHarness {
   name: string;
   type: HarnessType;
   config: HarnessConfig;
-  streamChat(params: StreamChatParams): AsyncIterable<ChatStreamPart>;
+  /** Yields AI SDK stream parts (text / tool events) interleaved with
+   *  normalized `RunEventPart`s (todo / usage / turn). See
+   *  `HarnessStreamPart`. */
+  streamChat(params: StreamChatParams): AsyncIterable<HarnessStreamPart>;
   probe(): Promise<ProbeResult>;
 }

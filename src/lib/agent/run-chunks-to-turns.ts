@@ -4,7 +4,13 @@
 // a mini chat view — same ChatMessage component, same markdown rendering,
 // same ToolPartView — instead of a per-token timeline.
 
-import type { ChunkRow } from "$lib/types/run";
+import type {
+  ChunkRow,
+  RunTokenUsage,
+  RunTodoUpdate,
+  RunTurnEvent,
+} from "$lib/types/run";
+import { isAbnormalFinish } from "$lib/types/run";
 import type {
   TextPart,
   ToolPart,
@@ -124,9 +130,44 @@ export function chunksToChatTurns(chunks: ChunkRow[]): UIChatTurn[] {
         text: `Error: ${chunk.text}`,
         state: "done",
       } satisfies TextPart);
+    } else if (chunk.kind === "todo_update") {
+      // Normalized todo snapshot → a cockpit entry rendered as a checklist
+      // (ToolPartView has a `todo_update` branch). The payload rides in
+      // `input` so the header can summarise progress and the body can list
+      // items.
+      const payload = safeJson<RunTodoUpdate>(chunk.text);
+      if (payload && Array.isArray(payload.items)) {
+        const parts = ensureAssistant();
+        parts.push({
+          type: "tool-todo_update",
+          toolCallId: `todo-${chunk.id ?? chunk.seq}`,
+          state: "output-available",
+          input: payload,
+        } satisfies ToolPart);
+      }
+    } else if (chunk.kind === "turn") {
+      // Turn boundaries are silent on a normal finish; an abnormal one
+      // (truncated / filtered / errored) surfaces as a warning cockpit
+      // entry so a clipped delegate reply is never mistaken for complete.
+      const payload = safeJson<RunTurnEvent>(chunk.text);
+      if (
+        payload &&
+        payload.phase === "completed" &&
+        isAbnormalFinish(payload.finishReason)
+      ) {
+        const parts = ensureAssistant();
+        parts.push({
+          type: "tool-turn",
+          toolCallId: `turn-${chunk.id ?? chunk.seq}`,
+          state: "output-error",
+          input: payload,
+          errorText: turnWarningText(payload),
+        } satisfies ToolPart);
+      }
     }
-    // thinking / system / unknown: skip for now — they don't have a clean
-    // place in the assistant-message shape and are rarely surfaced upstream.
+    // token_usage: consumed by latestTokenUsage() for the run-header chip,
+    // not rendered inline. thinking / system / unknown: skipped — no clean
+    // place in the assistant-message shape.
   }
 
   flushAssistant();
@@ -138,5 +179,33 @@ function safeJson<T>(text: string): T | null {
     return JSON.parse(text) as T;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Extract the most recent normalized token-usage snapshot from a run's
+ * chunks, for the run-header "% context" chip. Returns null when the run
+ * has emitted no usage (e.g. a harness that doesn't report it).
+ */
+export function latestTokenUsage(chunks: ChunkRow[]): RunTokenUsage | null {
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    if (chunks[i].kind !== "token_usage") continue;
+    const parsed = safeJson<RunTokenUsage>(chunks[i].text);
+    if (parsed && typeof parsed.contextTokens === "number") return parsed;
+  }
+  return null;
+}
+
+/** Human-readable warning for an abnormal turn finish. */
+function turnWarningText(turn: RunTurnEvent): string {
+  switch (turn.finishReason) {
+    case "length":
+      return "Response truncated — the model hit its max output length before finishing.";
+    case "content_filter":
+      return "Response stopped by a content filter.";
+    case "error":
+      return "The turn ended with an error before completing.";
+    default:
+      return "The turn ended abnormally.";
   }
 }

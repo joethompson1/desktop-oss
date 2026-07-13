@@ -3,8 +3,11 @@
   import { goto } from "$app/navigation";
   import { getRun, getRunChunks } from "$lib/db/runs";
   import { getLiveText, subscribeToRun } from "$lib/db/run-events";
-  import type { RunSummary } from "$lib/types/run";
-  import { chunksToChatTurns } from "$lib/agent/run-chunks-to-turns";
+  import type { RunSummary, RunTokenUsage } from "$lib/types/run";
+  import {
+    chunksToChatTurns,
+    latestTokenUsage,
+  } from "$lib/agent/run-chunks-to-turns";
   import { streamDelegateContinue } from "$lib/agent/delegate";
   import { harnesses } from "$lib/stores/harnesses.svelte";
   import { ChatStore } from "$lib/stores/chat-store.svelte";
@@ -44,6 +47,9 @@
   // Reactive run-meta for the title row's status badge + duration.
   let run = $state<RunSummary | null>(null);
   let loadError = $state<string | null>(null);
+  // Latest normalized token usage, for the "% context" chip. Derived from
+  // the run's token_usage chunks; null until a harness emits one.
+  let usage = $state<RunTokenUsage | null>(null);
 
   async function refreshRun() {
     if (!runId) return;
@@ -55,11 +61,61 @@
     }
   }
 
+  async function refreshUsage() {
+    if (!runId) return;
+    try {
+      usage = latestTokenUsage(await getRunChunks(runId));
+    } catch {
+      // Non-fatal — the chip just doesn't update.
+    }
+  }
+
+  function formatTokens(n: number): string {
+    if (n >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+    return `${n}`;
+  }
+
+  // Chip label + tooltip. With a known context window we show a
+  // percentage; otherwise (e.g. an arbitrary OpenAI-compatible endpoint)
+  // we show a raw token count rather than a misleading percentage.
+  const usageChip = $derived.by<{ label: string; title: string } | null>(() => {
+    if (!usage) return null;
+    if (typeof usage.contextWindow === "number" && usage.contextWindow > 0) {
+      const pct = Math.min(
+        100,
+        Math.round((usage.contextTokens / usage.contextWindow) * 100),
+      );
+      return {
+        label: `${pct}% ctx`,
+        title: `${usage.contextTokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} tokens in context`,
+      };
+    }
+    return {
+      label: `${formatTokens(usage.contextTokens)} tok`,
+      title: `${usage.contextTokens.toLocaleString()} tokens in context (window unknown)`,
+    };
+  });
+
   // Hydrate the store + the run-meta when the route param changes.
   $effect(() => {
     void runId;
     void store.hydrate();
     void refreshRun();
+    void refreshUsage();
+  });
+
+  // Reconcile once when the page's own composer turn finishes. While
+  // `sending` is true the chunk subscription below skips refreshing (to
+  // avoid double-painting the streaming bubble), so any todo / usage
+  // chunks that landed mid-turn are pulled in here on completion.
+  let wasSending = false;
+  $effect(() => {
+    const sending = store.sending;
+    if (wasSending && !sending) {
+      void store.refresh();
+      void refreshUsage();
+    }
+    wasSending = sending;
   });
 
   // Subscribe to live updates for this run. The orchestrator's
@@ -82,6 +138,7 @@
       // with the persisted snapshot, double-painting the assistant bubble.
       if (currentStore.sending) return;
       void currentStore.refresh();
+      void refreshUsage();
     };
 
     const unsubscribe = subscribeToRun(currentRunId, {
@@ -164,6 +221,9 @@
       {#if durationLabel}
         <span class="duration">{durationLabel}</span>
       {/if}
+      {#if usageChip}
+        <span class="ctx" title={usageChip.title}>{usageChip.label}</span>
+      {/if}
       <span class="status" data-status={run.status}>{statusLabel}</span>
     {/if}
   </div>
@@ -234,6 +294,17 @@
     color: var(--text-faint);
     font-size: 0.84em;
     font-variant-numeric: tabular-nums;
+  }
+  .ctx {
+    flex: 0 0 auto;
+    font-size: 0.78em;
+    padding: 0.15em 0.6em;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    cursor: default;
   }
   .status {
     flex: 0 0 auto;

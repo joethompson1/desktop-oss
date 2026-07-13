@@ -29,7 +29,13 @@ import type {
   ProbeResult,
   StreamChatParams,
 } from "$lib/types/harness";
-import type { ChatStreamPart } from "$lib/types/chat";
+import type {
+  HarnessStreamPart,
+  RunFinishReason,
+  RunTodoItem,
+  RunTodoUpdate,
+  RunTokenUsage,
+} from "$lib/types/run";
 
 interface CliStreamEvent {
   event: "spawned" | "stdout" | "stderr" | "end" | "error";
@@ -66,6 +72,16 @@ interface SDKMessageWithSession {
   session_id?: string;
 }
 
+/** The subset of Anthropic's per-response usage the SDK stamps onto each
+ *  assistant message. Same additive cache semantics as the raw Anthropic
+ *  wire (total input = input + cache_read + cache_creation). */
+interface ClaudeUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
 interface SDKAssistantMessage extends SDKMessageWithSession {
   type: "assistant";
   message: {
@@ -73,6 +89,10 @@ interface SDKAssistantMessage extends SDKMessageWithSession {
       | { type: "text"; text: string }
       | { type: "tool_use"; id: string; name: string; input: unknown }
     >;
+    /** Present on each agent-loop iteration; `input_tokens` reflects the
+     *  full prompt at that point, so the latest one approximates current
+     *  context occupancy. */
+    usage?: ClaudeUsage;
   };
   error?: string;
 }
@@ -105,6 +125,7 @@ interface SDKResultMessageSuccess extends SDKMessageWithSession {
   type: "result";
   subtype: "success";
   result?: string;
+  stop_reason?: string | null;
 }
 
 interface SDKResultMessageError extends SDKMessageWithSession {
@@ -115,6 +136,7 @@ interface SDKResultMessageError extends SDKMessageWithSession {
     | "error_max_budget_usd"
     | "error_max_structured_output_retries";
   errors?: string[];
+  stop_reason?: string | null;
 }
 
 interface SDKErrorPassthrough extends SDKMessageWithSession {
@@ -144,7 +166,7 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
 
   async *streamChat(
     params: StreamChatParams,
-  ): AsyncIterable<ChatStreamPart> {
+  ): AsyncIterable<HarnessStreamPart> {
     yield { type: "start" };
     yield { type: "start-step", request: {}, warnings: [] };
 
@@ -181,7 +203,7 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
       `request=${requestJson.length} chars`,
     );
 
-    type InternalChunk = ChatStreamPart | { type: "__done" };
+    type InternalChunk = HarnessStreamPart | { type: "__done" };
     const queue: InternalChunk[] = [];
     let pendingResolve: ((value: void) => void) | null = null;
     const push = (chunk: InternalChunk) => {
@@ -189,7 +211,7 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
       pendingResolve?.();
       pendingResolve = null;
     };
-    const pushPublic = (chunk: ChatStreamPart) => push(chunk);
+    const pushPublic = (chunk: HarnessStreamPart) => push(chunk);
     const waitForChunk = () =>
       new Promise<void>((resolve) => {
         if (queue.length > 0) resolve();
@@ -233,6 +255,11 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
     // remember each tool's name as we see the tool_use and look it up
     // when the tool_result lands.
     const toolNamesById = new Map<string, string>();
+
+    // TodoWrite is surfaced as a normalized `run-todo-update` event rather
+    // than a generic tool card; its tool_result ("Todos have been
+    // modified") carries no user value, so we suppress that too.
+    const suppressedToolIds = new Set<string>();
 
     let stdoutBuf = "";
     let finishEmitted = false;
@@ -282,12 +309,21 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
               text: block.text,
             });
           } else if (block.type === "tool_use") {
-            // Surface the tool call as a proper tool card. Close any
-            // open text segment first so the rendered transcript reads
-            // [text] → [tool card] → [text] rather than mixing them
-            // into one part. Cache the tool name for the matching
-            // tool_result that will arrive on a later SDKUserMessage.
+            // Close any open text segment first so the rendered transcript
+            // reads [text] → [entry] → [text] rather than mixing them.
             endCurrentTextIfOpen();
+            // TodoWrite → normalized todo update (not a generic tool card).
+            if (block.name === "TodoWrite") {
+              const todo = parseTodoWriteInput(block.input);
+              if (todo) {
+                suppressedToolIds.add(block.id);
+                pushPublic({ type: "run-todo-update", todo });
+                continue;
+              }
+            }
+            // Surface the tool call as a proper tool card. Cache the tool
+            // name for the matching tool_result that will arrive on a later
+            // SDKUserMessage.
             toolNamesById.set(block.id, block.name);
             pushPublic({
               type: "tool-input-start",
@@ -304,6 +340,12 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
             });
           }
         }
+        // Normalized token usage for this iteration. The latest one wins as
+        // the run's current context-occupancy signal.
+        if (am.message?.usage) {
+          const usage = claudeUsageToRun(am.message.usage);
+          if (usage) pushPublic({ type: "run-token-usage", usage });
+        }
       } else if (msg.type === "user") {
         // The SDK frames tool-execution results as user-role messages.
         // Iterate the content for `tool_result` blocks and emit
@@ -315,6 +357,10 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
         const um = msg as SDKUserMessage;
         for (const block of um.message?.content ?? []) {
           if (block.type !== "tool_result") continue;
+          // Drop the result of a suppressed tool (e.g. TodoWrite) — its
+          // call was re-surfaced as a normalized event with no card to
+          // attach a result to.
+          if (suppressedToolIds.has(block.tool_use_id)) continue;
           const toolName = toolNamesById.get(block.tool_use_id) ?? "tool";
           const output =
             typeof block.content === "string"
@@ -348,9 +394,22 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
           });
         }
       } else if (msg.type === "result") {
-        if ("subtype" in msg && msg.subtype === "success") {
+        const rm = msg as SDKResultMessageSuccess | SDKResultMessageError;
+        // Normalized turn completion. Any error subtype is an abnormal
+        // finish; a success maps its underlying stop_reason.
+        pushPublic({
+          type: "run-turn",
+          turn: {
+            phase: "completed",
+            finishReason:
+              rm.subtype === "success"
+                ? mapClaudeStopReason(rm.stop_reason)
+                : "error",
+          },
+        });
+        if (rm.subtype === "success") {
           // Already streamed via assistant messages — nothing to add.
-        } else if ("subtype" in msg) {
+        } else {
           const errMsg = msg as SDKResultMessageError;
           const errs = errMsg.errors?.length
             ? errMsg.errors.join("; ")
@@ -509,6 +568,67 @@ function emptyUsage() {
       reasoningTokens: undefined,
     },
   };
+}
+
+// All current Claude models expose a 200k-token context window. The SDK's
+// result message carries the true `contextWindow` in `modelUsage`, but that
+// only arrives at the end and reports cumulative (not current) token totals,
+// so we use the constant for the live per-turn occupancy signal instead.
+const CLAUDE_CONTEXT_WINDOW = 200_000;
+
+/** Normalize one assistant message's usage into a `RunTokenUsage`. The three
+ *  input buckets are additive (see `RunTokenUsage`). Returns null when the
+ *  message reported no tokens. */
+function claudeUsageToRun(u: ClaudeUsage): RunTokenUsage | null {
+  const input =
+    (u.input_tokens ?? 0) +
+    (u.cache_read_input_tokens ?? 0) +
+    (u.cache_creation_input_tokens ?? 0);
+  const output = u.output_tokens ?? 0;
+  if (input === 0 && output === 0) return null;
+  return {
+    contextTokens: input + output,
+    contextWindow: CLAUDE_CONTEXT_WINDOW,
+    inputTokens: input,
+    outputTokens: output,
+  };
+}
+
+/** Parse a `TodoWrite` tool input into a normalized todo snapshot. */
+function parseTodoWriteInput(input: unknown): RunTodoUpdate | null {
+  if (!input || typeof input !== "object") return null;
+  const todos = (input as { todos?: unknown }).todos;
+  if (!Array.isArray(todos)) return null;
+  const items: RunTodoItem[] = [];
+  for (const t of todos) {
+    if (!t || typeof t !== "object") continue;
+    const content = (t as { content?: unknown }).content;
+    if (typeof content !== "string") continue;
+    const status = (t as { status?: unknown }).status;
+    items.push({
+      content,
+      status:
+        status === "in_progress" || status === "completed" ? status : "pending",
+    });
+  }
+  return { items };
+}
+
+/** Map Claude's `stop_reason` onto the normalized `RunFinishReason`. */
+function mapClaudeStopReason(reason: string | null | undefined): RunFinishReason {
+  switch (reason) {
+    case "end_turn":
+    case "stop_sequence":
+      return "stop";
+    case "max_tokens":
+      return "length";
+    case "tool_use":
+      return "tool_calls";
+    case "refusal":
+      return "content_filter";
+    default:
+      return "stop";
+  }
 }
 
 interface SidecarRequest {

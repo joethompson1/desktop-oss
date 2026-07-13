@@ -112,6 +112,29 @@
   // Generic verb/detail for non-delegate tools.
   const { verb, detail } = $derived(summarizeToolCall(toolName, input));
 
+  // todo_update: normalized checklist (Plan 03). Items ride in `input`.
+  const todoItems = $derived.by<Array<{ content: string; status: string }>>(
+    () => {
+      if (toolName !== "todo_update") return [];
+      const items = (input?.items ?? null) as unknown;
+      if (!Array.isArray(items)) return [];
+      const out: Array<{ content: string; status: string }> = [];
+      for (const it of items) {
+        if (it && typeof it === "object") {
+          const content = (it as { content?: unknown }).content;
+          const status = (it as { status?: unknown }).status;
+          if (typeof content === "string") {
+            out.push({
+              content,
+              status: typeof status === "string" ? status : "pending",
+            });
+          }
+        }
+      }
+      return out;
+    },
+  );
+
   let expanded = $state(false);
 
   // A module's own tool (namespaced `${moduleId}_...`, e.g. `fretboard_show`)
@@ -221,6 +244,26 @@
           <ToolOutputDisclosure label="Error" testid="delegate-error">
             <ToolCodeBlock content={part.errorText} language="text" />
           </ToolOutputDisclosure>
+        {/if}
+
+      {:else if toolName === "todo_update"}
+        {#if todoItems.length > 0}
+          <ul class="todos">
+            {#each todoItems as item, i (i)}
+              <li class="todo" data-status={item.status}>
+                <span class="todo-box" aria-hidden="true"
+                  >{item.status === "completed"
+                    ? "✓"
+                    : item.status === "in_progress"
+                      ? "▶"
+                      : "○"}</span
+                >
+                <span class="todo-text">{item.content}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="awaiting">No todos.</div>
         {/if}
 
       {:else if toolName === "read_file"}
@@ -481,5 +524,42 @@
     background: var(--code-inline-bg);
     border-radius: 4px;
     padding: 0.05em 0.35em;
+  }
+  .todos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    font-size: var(--text-meta);
+  }
+  .todo {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+    color: var(--text);
+  }
+  .todo-box {
+    flex: 0 0 auto;
+    font-family: var(--code-mono);
+    color: var(--text-faint);
+    width: 1em;
+    text-align: center;
+  }
+  .todo[data-status="in_progress"] .todo-box {
+    color: var(--accent-text, var(--accent));
+  }
+  .todo[data-status="completed"] .todo-box {
+    color: var(--success);
+  }
+  .todo[data-status="completed"] .todo-text {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+  .todo-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
   }
 </style>

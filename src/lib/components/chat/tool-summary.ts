@@ -22,6 +22,33 @@ export function summarizeToolCall(
     typeof input[k] === "string" ? (input[k] as string) : "";
 
   switch (safe) {
+    // ─── Normalized run events (Plan 03) ────────────────────────────────
+    case "todo_update": {
+      const items = Array.isArray(input.items)
+        ? (input.items as Array<{ status?: unknown }>)
+        : [];
+      const done = items.filter((i) => i && i.status === "completed").length;
+      return {
+        verb: "Updated todos",
+        detail: items.length ? `${done}/${items.length} done` : "",
+      };
+    }
+    case "turn": {
+      const reason = str("finishReason");
+      const label =
+        reason === "length"
+          ? "Response truncated"
+          : reason === "content_filter"
+            ? "Response filtered"
+            : reason === "error"
+              ? "Turn errored"
+              : "Turn ended abnormally";
+      return {
+        verb: `⚠ ${label}`,
+        detail: reason === "length" ? "max output tokens" : "",
+      };
+    }
+
     // ─── Orchestrator-built-in tools (this app) ─────────────────────────
     case "delegate_task": {
       const task = str("task");

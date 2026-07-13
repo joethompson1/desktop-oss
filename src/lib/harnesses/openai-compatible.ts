@@ -19,6 +19,11 @@ import type {
   ToolDefinition,
 } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
+import type {
+  HarnessStreamPart,
+  RunFinishReason,
+  RunTokenUsage,
+} from "$lib/types/run";
 import { parseSSEStream } from "./sse";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -55,7 +60,7 @@ export class OpenAICompatibleHarness implements LLMHarness {
 
   async *streamChat(
     params: StreamChatParams,
-  ): AsyncIterable<ChatStreamPart> {
+  ): AsyncIterable<HarnessStreamPart> {
     const url = `${this.#baseUrl()}/chat/completions`;
     const headers = await this.#buildHeaders();
     const body = this.#buildBody(params);
@@ -100,6 +105,25 @@ export class OpenAICompatibleHarness implements LLMHarness {
       { id: string; name: string; argBuf: string; announced: boolean }
     >();
 
+    // Normalized usage arrives on a trailing chunk (empty `choices`, populated
+    // `usage`) when we requested `stream_options.include_usage`. `flushed`
+    // guards the one-time text-end / tool-call emission when the finish_reason
+    // lands — after that we keep reading only for the usage chunk + [DONE].
+    let usage: RunTokenUsage | undefined;
+    let stopReason: RunFinishReason = "stop";
+    let flushed = false;
+
+    const completionEvents = (): HarnessStreamPart[] => {
+      const events: HarnessStreamPart[] = [];
+      if (usage) events.push({ type: "run-token-usage", usage });
+      events.push({
+        type: "run-turn",
+        turn: { phase: "completed", finishReason: stopReason },
+      });
+      events.push(emptyFinish());
+      return events;
+    };
+
     try {
       for await (const rec of parseSSEStream(response)) {
         if (rec.data === "[DONE]") break;
@@ -109,6 +133,11 @@ export class OpenAICompatibleHarness implements LLMHarness {
         } catch {
           continue;
         }
+
+        // Usage can ride on a trailing chunk with no choices — read it
+        // before the choice guard below.
+        if (payload.usage) usage = normalizeOpenAIUsage(payload.usage);
+
         const choice = payload.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta ?? {};
@@ -161,7 +190,9 @@ export class OpenAICompatibleHarness implements LLMHarness {
           }
         }
 
-        if (choice.finish_reason) {
+        if (choice.finish_reason && !flushed) {
+          flushed = true;
+          stopReason = mapOpenAIFinishReason(choice.finish_reason);
           if (textStarted) yield { type: "text-end", id: textId };
           for (const entry of toolByIndex.values()) {
             let input: unknown = {};
@@ -179,8 +210,7 @@ export class OpenAICompatibleHarness implements LLMHarness {
               input,
             };
           }
-          yield emptyFinish();
-          return;
+          // Keep reading — a trailing usage chunk (and [DONE]) may follow.
         }
       }
     } catch (err) {
@@ -192,8 +222,8 @@ export class OpenAICompatibleHarness implements LLMHarness {
       return;
     }
 
-    if (textStarted) yield { type: "text-end", id: textId };
-    yield emptyFinish();
+    if (!flushed && textStarted) yield { type: "text-end", id: textId };
+    yield* completionEvents();
   }
 
   async probe(): Promise<ProbeResult> {
@@ -248,6 +278,12 @@ export class OpenAICompatibleHarness implements LLMHarness {
       temperature: params.temperature ?? 1,
       max_tokens: params.maxTokens ?? 4096,
       stream: true,
+      // Ask for a trailing usage chunk so we can emit normalized token
+      // usage. The OpenAI wire only includes usage in a streamed response
+      // when this is set. Compatible servers (vLLM, LM Studio, OpenRouter,
+      // llama.cpp, recent Ollama) honour it; ones that don't simply omit
+      // the usage chunk and we skip the usage event.
+      stream_options: { include_usage: true },
       tools: params.tools ? toOpenAITools(params.tools) : undefined,
     };
   }
@@ -316,6 +352,48 @@ interface OpenAIStreamChunk {
     };
     finish_reason?: string | null;
   }>;
+  usage?: OpenAIUsage | null;
+}
+
+/** OpenAI-style usage. Unlike Anthropic, `prompt_tokens` ALREADY includes
+ *  any cached tokens (`prompt_tokens_details.cached_tokens` is a subset, not
+ *  an additive bucket) — so context tokens are just prompt + completion. */
+interface OpenAIUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+}
+
+function normalizeOpenAIUsage(u: OpenAIUsage): RunTokenUsage {
+  const input = u.prompt_tokens ?? 0;
+  const output = u.completion_tokens ?? 0;
+  return {
+    // Do NOT add cached tokens: they're already counted inside prompt_tokens.
+    // contextWindow is intentionally omitted — an arbitrary OpenAI-compatible
+    // endpoint's window isn't knowable here, so the UI shows a token count
+    // rather than a misleading percentage.
+    contextTokens: input + output,
+    inputTokens: input,
+    outputTokens: output,
+  };
+}
+
+/** Map OpenAI's `finish_reason` onto the normalized `RunFinishReason`. */
+function mapOpenAIFinishReason(reason: string | null | undefined): RunFinishReason {
+  switch (reason) {
+    case "stop":
+      return "stop";
+    case "length":
+      return "length";
+    case "tool_calls":
+    case "function_call":
+      return "tool_calls";
+    case "content_filter":
+      return "content_filter";
+    default:
+      return "other";
+  }
 }
 
 /** Synthesise the SDK's `finish` event with neutral defaults — the raw
