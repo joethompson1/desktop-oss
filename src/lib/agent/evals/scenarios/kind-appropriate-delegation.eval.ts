@@ -115,7 +115,10 @@ async function runScenario(): Promise<void> {
         expected: {
           minCalls: 2,
           everyCallHasRole: true,
-          harnessNameOneOf: ["Tutor"],
+          // Accept an explicit "Tutor" OR an omitted harness (the resolver's
+          // fallback is the general Tutor, so relying on the default is a
+          // correct choice here — the persona in `role` is the real signal).
+          harnessNameOneOf: ["Tutor", "(default)"],
         },
       },
     ],

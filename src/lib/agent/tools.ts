@@ -216,7 +216,10 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           name: name ?? null,
           status: "spawned",
           harness: harnessDisplayName,
-          role: role ?? null,
+          // Boolean, not the role text — the orchestrator just authored `role`
+          // in the call args; echoing it back would keep the full persona in
+          // context twice for the life of the conversation.
+          hasRole: Boolean(role && role.trim()),
           message:
             `Delegate ${name ? `"${name}"` : `(unnamed, runId ${runId})`} spawned in the background on harness "${harnessDisplayName}"${role ? " with the role you specified" : ""}. ` +
             `It runs concurrently — you can spawn additional delegates without waiting, and the user can continue chatting. ` +

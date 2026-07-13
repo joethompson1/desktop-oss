@@ -17,12 +17,22 @@ export interface DelegateKindExpectation {
    *  the signature of a general-model delegation. */
   everyCallHasRole?: boolean;
   /** Each delegate_task call's `harness` field must name one of these
-   *  delegates — used to assert the orchestrator picked the right kind. */
+   *  delegates — used to assert the orchestrator picked the right kind.
+   *  Include the sentinel `"(default)"` to also accept a call that omitted
+   *  `harness` (relying on the configured default) — appropriate on rows
+   *  where the default delegate is the right kind. */
   harnessNameOneOf?: string[];
 }
 
 function hasRole(input: Record<string, unknown>): boolean {
   return typeof input.role === "string" && input.role.trim().length > 0;
+}
+
+/** The `harness` a call named, or the `"(default)"` sentinel when omitted. */
+function harnessToken(input: Record<string, unknown>): string {
+  return typeof input.harness === "string" && input.harness.trim()
+    ? input.harness
+    : "(default)";
 }
 
 export function delegateKindSelection<TInput>(): Scorer<
@@ -56,7 +66,7 @@ export function delegateKindSelection<TInput>(): Scorer<
     if (expected.harnessNameOneOf) {
       const allowed = new Set(expected.harnessNameOneOf);
       const offTarget = inputs.filter(
-        (i) => !(typeof i.harness === "string" && allowed.has(i.harness)),
+        (i) => !allowed.has(harnessToken(i)),
       ).length;
       if (calls.length === 0 || offTarget > 0) {
         problems.push(
@@ -70,7 +80,7 @@ export function delegateKindSelection<TInput>(): Scorer<
       score: problems.length === 0 ? 1 : 0,
       metadata: {
         problems,
-        harnesses: inputs.map((i) => i.harness ?? "(default)"),
+        harnesses: inputs.map(harnessToken),
         roles: inputs.map((i) => (hasRole(i) ? "set" : "—")),
       },
     };

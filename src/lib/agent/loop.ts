@@ -114,8 +114,19 @@ function buildDelegateRoster(configs: HarnessConfig[]): string {
     "Use the `delegate_task` tool's `harness` field with one of the names below to route a task to a specific delegate. Omit `harness` to use the default. Pass `model` to override the harness's configured default model for a single call — useful when the same harness can route through different models for different kinds of work.",
   );
   lines.push(
-    "Each delegate is one of two **kinds**. Match the kind to the work: a *sealed coding agent* for code/commands/filesystem work (hand it a precise brief), or a *general model* for a persona (set the `delegate_task` `role` field to author its identity — a tutor, researcher, critic, planner, …). You can spawn several general delegates in parallel with different roles (e.g. one tutor per chapter).",
+    "Each delegate is one of two **kinds** — match the kind to the work (spawn several general delegates in parallel with different roles when useful, e.g. one tutor per chapter):",
   );
+  // State each kind's full description once (only for kinds actually
+  // configured), then tag each entry with just its kind. Repeating the full
+  // description per entry would re-send the same ~60 words for every delegate
+  // on every turn.
+  const kindsPresent = new Set(configs.map((c) => harnessKind(c.type)));
+  for (const k of ["sealed", "general"] as const) {
+    if (kindsPresent.has(k)) {
+      const label = k === "sealed" ? "sealed coding agent" : "general model";
+      lines.push(`- **${label}** — ${HARNESS_KIND_DESCRIPTIONS[k]}`);
+    }
+  }
   for (const cfg of configs) {
     const tags: string[] = [];
     const kind = harnessKind(cfg.type);
@@ -124,7 +135,6 @@ function buildDelegateRoster(configs: HarnessConfig[]): string {
     if (cfg.model) tags.push(`default model=${cfg.model}`);
     if (cfg.isDelegateDefault) tags.push("DEFAULT");
     lines.push(`- **${cfg.name}** (${tags.join(", ")})`);
-    lines.push(`  - Kind: ${HARNESS_KIND_DESCRIPTIONS[kind]}`);
     if (cfg.description) {
       lines.push(`  - ${cfg.description}`);
     }
