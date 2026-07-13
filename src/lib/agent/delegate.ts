@@ -1,4 +1,4 @@
-import type { LLMHarness, ChatMessage, HarnessKind } from "$lib/types/harness";
+import type { LLMHarness, ChatMessage } from "$lib/types/harness";
 import { harnessKind } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import type { DelegateResult, RunStatus } from "$lib/types/run";
@@ -16,7 +16,11 @@ import {
   emitRunTextDelta,
 } from "$lib/db/run-events";
 import { getOrchestratorConversationId } from "$lib/db/conversations";
-import { loadDelegatePrompt } from "./prompts";
+import { loadDelegatePrompt, DEFAULT_DELEGATE_PROMPT } from "./prompts";
+import {
+  buildDelegateBrief,
+  composeDelegateSystemPrompt,
+} from "./delegate-prompt";
 
 // Once a run accumulates more than this many reconstructed messages, a
 // rolling context summary is generated after each turn. The last
@@ -111,11 +115,7 @@ export async function runDelegate(
   });
   await updateRunStatus(runId, "RUNNING");
 
-  const systemPrompt = composeDelegateSystemPrompt(
-    await loadDelegatePrompt(),
-    input.role,
-    kind,
-  );
+  const systemPrompt = await buildDelegateSystemPrompt(harness, input.role);
   const brief = buildDelegateBrief(input, kind);
   const messages: ChatMessage[] = [{ role: "user", content: brief }];
 
@@ -244,66 +244,22 @@ function errorToText(error: unknown): string {
 }
 
 /**
- * Footer appended after an orchestrator-authored role for a general
- * (raw-LLM) delegate. Keeps the persona primary but reinstates the generic
- * delegate hygiene the coding-flavoured default prompt would otherwise
- * provide — without contradicting the persona (a tutor must not be told it
- * is a "specialist coding sub-agent").
+ * Resolve the system prompt for a delegate turn. Recomposed on every turn
+ * (spawn AND every continuation) rather than captured once — a general
+ * delegate's persona lives only in the system prompt, so it must be
+ * reapplied each turn or it evaporates. Single home for that invariant;
+ * called from runDelegate, continueRun, and streamDelegateContinue.
  */
-const DELEGATE_ROLE_FOOTER =
-  "---\n" +
-  "You are running as a delegate sub-agent inside a larger workspace, in the role described above. " +
-  "You have no memory of the orchestrator's conversation beyond the brief you were given — everything you need is in the brief. " +
-  "Stay in this role and within the scope of your task. The user may open your page and talk to you directly; stay in character when they do. " +
-  "When you have completed the task (or taken it as far as you can), report back concisely: what you did or found, any assumptions you made, and anything the orchestrator should know.";
-
-/**
- * Build the system prompt for a delegate turn, given the editable base
- * delegate prompt, the orchestrator-authored role (if any), and the
- * harness kind.
- *
- * - general delegates WITH a role: the role becomes the delegate's identity,
- *   replacing the generic base prompt (plus a hygiene footer). This is what
- *   makes "spawn a tutor" work — the delegate is not told it's a coding agent.
- * - sealed delegates: the role can't override the agent's own system prompt,
- *   so it is folded into the task brief instead (see buildDelegateBrief) and
- *   the base prompt is passed through unchanged.
- * - anything without a role: the base prompt, unchanged.
- */
-function composeDelegateSystemPrompt(
-  base: string,
+async function buildDelegateSystemPrompt(
+  harness: LLMHarness,
   role: string | undefined,
-  kind: HarnessKind,
-): string {
-  const trimmedRole = role?.trim();
-  if (!trimmedRole || kind === "sealed") return base;
-  return `${trimmedRole}\n\n${DELEGATE_ROLE_FOOTER}`;
-}
-
-function buildDelegateBrief(input: DelegateInput, kind: HarnessKind): string {
-  const lines: string[] = [];
-  // Sealed coding agents can't be reprogrammed via the system prompt, so a
-  // role the orchestrator authored is folded into the brief as framing.
-  // General delegates receive the role as their system prompt instead (see
-  // composeDelegateSystemPrompt), so it is omitted here to avoid duplication.
-  if (kind === "sealed" && input.role && input.role.trim()) {
-    lines.push(`# Role\n${input.role.trim()}`);
-  }
-  lines.push(`# Task\n${input.task.trim()}`);
-  if (input.workingDirectory && input.workingDirectory.trim()) {
-    lines.push(
-      `\n# Working directory\nResolve relative paths and run filesystem work against:\n${input.workingDirectory.trim()}`,
-    );
-  }
-  if (input.context && input.context.trim()) {
-    lines.push(`\n# Context\n${input.context.trim()}`);
-  }
-  if (input.filesOfInterest && input.filesOfInterest.length > 0) {
-    lines.push(
-      `\n# Files of interest\n${input.filesOfInterest.map((f) => `- ${f}`).join("\n")}`,
-    );
-  }
-  return lines.join("\n");
+): Promise<string> {
+  return composeDelegateSystemPrompt(
+    await loadDelegatePrompt(),
+    role,
+    harnessKind(harness.type),
+    DEFAULT_DELEGATE_PROMPT,
+  );
 }
 
 function truncateTitle(task: string): string {
@@ -527,14 +483,7 @@ export async function continueRun(
   await appendChunk({ runId: input.runId, kind: "user_message", text: input.userMessage });
   await updateRunStatus(input.runId, "RUNNING");
 
-  // Recompose the same persona the run was spawned with. For general
-  // delegates the role lives only in the system prompt (never the replayed
-  // brief), so it must be reapplied every turn or the persona evaporates.
-  const systemPrompt = composeDelegateSystemPrompt(
-    await loadDelegatePrompt(),
-    run?.role,
-    harnessKind(harness.type),
-  );
+  const systemPrompt = await buildDelegateSystemPrompt(harness, run?.role);
   let assistantText = "";
   let status: RunStatus = "RUNNING";
   let errorText: string | undefined;
@@ -658,13 +607,7 @@ export async function* streamDelegateContinue(
         await loadRunMessages(input.runId),
         run?.contextSummary,
       );
-  // Reapply the run's persona (see continueRun) so it survives the user
-  // chatting on the delegate's own page, not just orchestrator follow-ups.
-  const systemPrompt = composeDelegateSystemPrompt(
-    await loadDelegatePrompt(),
-    run?.role,
-    harnessKind(harness.type),
-  );
+  const systemPrompt = await buildDelegateSystemPrompt(harness, run?.role);
 
   let status: RunStatus = "RUNNING";
   let errorText: string | undefined;

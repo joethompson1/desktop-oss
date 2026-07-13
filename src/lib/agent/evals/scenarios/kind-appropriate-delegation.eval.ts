@@ -1,6 +1,7 @@
-// Demonstrates Plan 02: the orchestrator delegates in a KIND-appropriate
-// way. Two harnesses are on the roster — a sealed coding agent ("CodeAgent")
-// and a general model ("Tutor"). Two rows exercise the two directions:
+// Demonstrates kind-appropriate delegation: the orchestrator routes work to
+// the right family of worker. Two harnesses are on the roster — a sealed
+// coding agent ("CodeAgent") and a general model ("Tutor"). Two rows exercise
+// the two directions:
 //
 //   - a code-refactor task must go to the sealed coding agent;
 //   - a "teach me across two lessons" task must spawn general-model
