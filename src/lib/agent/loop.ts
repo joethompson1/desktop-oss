@@ -9,6 +9,7 @@ import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
 
 import type { HarnessConfig, HarnessType, LLMHarness } from "$lib/types/harness";
+import { harnessKind, HARNESS_KIND_DESCRIPTIONS } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import { loadMessages } from "$lib/db/conversations";
 import { listRuns } from "$lib/db/runs";
@@ -112,12 +113,18 @@ function buildDelegateRoster(configs: HarnessConfig[]): string {
   lines.push(
     "Use the `delegate_task` tool's `harness` field with one of the names below to route a task to a specific delegate. Omit `harness` to use the default. Pass `model` to override the harness's configured default model for a single call — useful when the same harness can route through different models for different kinds of work.",
   );
+  lines.push(
+    "Each delegate is one of two **kinds**. Match the kind to the work: a *sealed coding agent* for code/commands/filesystem work (hand it a precise brief), or a *general model* for a persona (set the `delegate_task` `role` field to author its identity — a tutor, researcher, critic, planner, …). You can spawn several general delegates in parallel with different roles (e.g. one tutor per chapter).",
+  );
   for (const cfg of configs) {
     const tags: string[] = [];
+    const kind = harnessKind(cfg.type);
+    tags.push(kind === "sealed" ? "sealed coding agent" : "general model");
     tags.push(cfg.type);
     if (cfg.model) tags.push(`default model=${cfg.model}`);
     if (cfg.isDelegateDefault) tags.push("DEFAULT");
     lines.push(`- **${cfg.name}** (${tags.join(", ")})`);
+    lines.push(`  - Kind: ${HARNESS_KIND_DESCRIPTIONS[kind]}`);
     if (cfg.description) {
       lines.push(`  - ${cfg.description}`);
     }

@@ -27,6 +27,13 @@ export interface RunSummary {
    *  message_delegate and get_delegate_history to reference a run by name
    *  instead of its generated run ID. */
   name?: string;
+  /** Optional per-spawn role / persona the orchestrator authored for this
+   *  delegate (via delegate_task's `role` field). For general (raw-LLM)
+   *  delegates it becomes the system prompt; for sealed coding agents it is
+   *  folded into the task brief. Persisted so the persona survives history
+   *  replay, message_delegate continuations, and the user chatting on the
+   *  delegate's own page. Undefined for delegates spawned without a role. */
+  role?: string;
   title: string;
   status: RunStatus;
   delegateHarnessId?: string;

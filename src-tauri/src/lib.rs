@@ -1179,6 +1179,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0005_module_state.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "delegate role",
+            sql: include_str!("../migrations/0006_delegate_role.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
