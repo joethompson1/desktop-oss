@@ -29,13 +29,14 @@ import type {
   ProbeResult,
   StreamChatParams,
 } from "$lib/types/harness";
-import type {
-  HarnessStreamPart,
-  RunFinishReason,
-  RunTodoItem,
-  RunTodoUpdate,
-  RunTokenUsage,
-} from "$lib/types/run";
+import type { HarnessStreamPart, RunTokenUsage } from "$lib/types/run";
+import {
+  claudeUsageToRun,
+  mapClaudeStopReason,
+  parseTodoWriteInput,
+  pickContextWindow,
+  type ClaudeUsage,
+} from "./normalize";
 
 interface CliStreamEvent {
   event: "spawned" | "stdout" | "stderr" | "end" | "error";
@@ -72,16 +73,6 @@ interface SDKMessageWithSession {
   session_id?: string;
 }
 
-/** The subset of Anthropic's per-response usage the SDK stamps onto each
- *  assistant message. Same additive cache semantics as the raw Anthropic
- *  wire (total input = input + cache_read + cache_creation). */
-interface ClaudeUsage {
-  input_tokens?: number;
-  output_tokens?: number;
-  cache_read_input_tokens?: number | null;
-  cache_creation_input_tokens?: number | null;
-}
-
 interface SDKAssistantMessage extends SDKMessageWithSession {
   type: "assistant";
   message: {
@@ -93,6 +84,9 @@ interface SDKAssistantMessage extends SDKMessageWithSession {
      *  full prompt at that point, so the latest one approximates current
      *  context occupancy. */
     usage?: ClaudeUsage;
+    /** Underlying API stop reason for the iteration. Used as a fallback
+     *  when the terminal result message's own `stop_reason` is null. */
+    stop_reason?: string | null;
   };
   error?: string;
 }
@@ -121,11 +115,21 @@ interface SDKUserMessage extends SDKMessageWithSession {
   };
 }
 
+/** Per-model cumulative usage on the terminal result. We read only
+ *  `contextWindow` from it — the actual window size for the run's model,
+ *  used to refine the final usage chip instead of hardcoding one. (The
+ *  token counts here are cumulative-across-the-run, so NOT usable as
+ *  current context occupancy.) */
+interface SDKModelUsage {
+  contextWindow?: number;
+}
+
 interface SDKResultMessageSuccess extends SDKMessageWithSession {
   type: "result";
   subtype: "success";
   result?: string;
   stop_reason?: string | null;
+  modelUsage?: Record<string, SDKModelUsage>;
 }
 
 interface SDKResultMessageError extends SDKMessageWithSession {
@@ -137,6 +141,7 @@ interface SDKResultMessageError extends SDKMessageWithSession {
     | "error_max_structured_output_retries";
   errors?: string[];
   stop_reason?: string | null;
+  modelUsage?: Record<string, SDKModelUsage>;
 }
 
 interface SDKErrorPassthrough extends SDKMessageWithSession {
@@ -265,6 +270,13 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
     let finishEmitted = false;
     let errorEmitted = false;
     let sessionInfoEmitted = false;
+    // Token-usage refinement (review finding #2 — never hardcode the window).
+    // The real context window only arrives on the terminal `result` message,
+    // so per-iteration usage omits it (the UI shows a token count until then)
+    // and we emit one corrected snapshot at the end with the true window.
+    // `lastAssistantStopReason` backstops a null `stop_reason` on the result.
+    let lastUsage: RunTokenUsage | null = null;
+    let lastAssistantStopReason: string | null | undefined;
 
     const handleSdkMessage = (msg: SDKMessage) => {
       // The SDK stamps every message with `session_id` once the system
@@ -340,11 +352,19 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
             });
           }
         }
-        // Normalized token usage for this iteration. The latest one wins as
-        // the run's current context-occupancy signal.
+        // Underlying stop reason — a fallback for a null result stop_reason.
+        if (typeof am.message?.stop_reason === "string") {
+          lastAssistantStopReason = am.message.stop_reason;
+        }
+        // Normalized token usage for this iteration. The window is unknown
+        // until the result message, so it's omitted here (the UI shows a
+        // token count); the latest one wins as the current-occupancy signal.
         if (am.message?.usage) {
           const usage = claudeUsageToRun(am.message.usage);
-          if (usage) pushPublic({ type: "run-token-usage", usage });
+          if (usage) {
+            lastUsage = usage;
+            pushPublic({ type: "run-token-usage", usage });
+          }
         }
       } else if (msg.type === "user") {
         // The SDK frames tool-execution results as user-role messages.
@@ -395,21 +415,33 @@ export class ClaudeCodeSDKHarness implements LLMHarness {
         }
       } else if (msg.type === "result") {
         const rm = msg as SDKResultMessageSuccess | SDKResultMessageError;
-        // Normalized turn completion. Any error subtype is an abnormal
-        // finish; a success maps its underlying stop_reason.
-        pushPublic({
-          type: "run-turn",
-          turn: {
-            phase: "completed",
-            finishReason:
-              rm.subtype === "success"
-                ? mapClaudeStopReason(rm.stop_reason)
-                : "error",
-          },
-        });
+        // Refine the final usage with the run's true context window — it only
+        // lands here (finding #2: never hardcode). Re-emit the last occupancy
+        // snapshot with the real window so the chip shows an accurate %.
+        const window = pickContextWindow(rm.modelUsage);
+        if (window && lastUsage) {
+          pushPublic({
+            type: "run-token-usage",
+            usage: { ...lastUsage, contextWindow: window },
+          });
+        }
         if (rm.subtype === "success") {
-          // Already streamed via assistant messages — nothing to add.
+          // Emit a normalized turn so a truncated reply (stop_reason
+          // "max_tokens") surfaces as a warning. Fall back to the last
+          // assistant stop_reason when the result's own is null (finding #3).
+          pushPublic({
+            type: "run-turn",
+            turn: {
+              phase: "completed",
+              finishReason: mapClaudeStopReason(
+                rm.stop_reason ?? lastAssistantStopReason,
+              ),
+            },
+          });
         } else {
+          // Error subtype: the error part below already surfaces the failure,
+          // so we DON'T also emit a turn(error) warning — that would be two
+          // transcript entries for one failure (finding #4).
           const errMsg = msg as SDKResultMessageError;
           const errs = errMsg.errors?.length
             ? errMsg.errors.join("; ")
@@ -570,66 +602,6 @@ function emptyUsage() {
   };
 }
 
-// All current Claude models expose a 200k-token context window. The SDK's
-// result message carries the true `contextWindow` in `modelUsage`, but that
-// only arrives at the end and reports cumulative (not current) token totals,
-// so we use the constant for the live per-turn occupancy signal instead.
-const CLAUDE_CONTEXT_WINDOW = 200_000;
-
-/** Normalize one assistant message's usage into a `RunTokenUsage`. The three
- *  input buckets are additive (see `RunTokenUsage`). Returns null when the
- *  message reported no tokens. */
-function claudeUsageToRun(u: ClaudeUsage): RunTokenUsage | null {
-  const input =
-    (u.input_tokens ?? 0) +
-    (u.cache_read_input_tokens ?? 0) +
-    (u.cache_creation_input_tokens ?? 0);
-  const output = u.output_tokens ?? 0;
-  if (input === 0 && output === 0) return null;
-  return {
-    contextTokens: input + output,
-    contextWindow: CLAUDE_CONTEXT_WINDOW,
-    inputTokens: input,
-    outputTokens: output,
-  };
-}
-
-/** Parse a `TodoWrite` tool input into a normalized todo snapshot. */
-function parseTodoWriteInput(input: unknown): RunTodoUpdate | null {
-  if (!input || typeof input !== "object") return null;
-  const todos = (input as { todos?: unknown }).todos;
-  if (!Array.isArray(todos)) return null;
-  const items: RunTodoItem[] = [];
-  for (const t of todos) {
-    if (!t || typeof t !== "object") continue;
-    const content = (t as { content?: unknown }).content;
-    if (typeof content !== "string") continue;
-    const status = (t as { status?: unknown }).status;
-    items.push({
-      content,
-      status:
-        status === "in_progress" || status === "completed" ? status : "pending",
-    });
-  }
-  return { items };
-}
-
-/** Map Claude's `stop_reason` onto the normalized `RunFinishReason`. */
-function mapClaudeStopReason(reason: string | null | undefined): RunFinishReason {
-  switch (reason) {
-    case "end_turn":
-    case "stop_sequence":
-      return "stop";
-    case "max_tokens":
-      return "length";
-    case "tool_use":
-      return "tool_calls";
-    case "refusal":
-      return "content_filter";
-    default:
-      return "stop";
-  }
-}
 
 interface SidecarRequest {
   /** The prompt string passed to query(). Composed from the messages

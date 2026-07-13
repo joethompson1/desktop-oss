@@ -24,6 +24,11 @@ import type {
   RunFinishReason,
   RunTokenUsage,
 } from "$lib/types/run";
+import {
+  mapOpenAIFinishReason,
+  normalizeOpenAIUsage,
+  type OpenAIUsage,
+} from "./normalize";
 import { parseSSEStream } from "./sse";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -63,18 +68,30 @@ export class OpenAICompatibleHarness implements LLMHarness {
   ): AsyncIterable<HarnessStreamPart> {
     const url = `${this.#baseUrl()}/chat/completions`;
     const headers = await this.#buildHeaders();
-    const body = this.#buildBody(params);
 
     yield { type: "start" };
 
+    // First attempt asks for a trailing usage chunk via
+    // `stream_options.include_usage`. A few strict endpoints (older Azure
+    // API versions, some proxies) reject that unknown field with a 400/422 —
+    // rather than break a previously-working delegate, retry once without it
+    // (we just forgo the usage chip for this call).
     let response: NativeFetchResponse;
     try {
       response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(this.#buildBody(params, true)),
         signal: params.signal,
       });
+      if (!response.ok && (response.status === 400 || response.status === 422)) {
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(this.#buildBody(params, false)),
+          signal: params.signal,
+        });
+      }
     } catch (err) {
       yield {
         type: "error",
@@ -264,12 +281,15 @@ export class OpenAICompatibleHarness implements LLMHarness {
     return headers;
   }
 
-  #buildBody(params: StreamChatParams): Record<string, unknown> {
+  #buildBody(
+    params: StreamChatParams,
+    includeUsage: boolean,
+  ): Record<string, unknown> {
     const messages: OpenAIMessage[] = [
       { role: "system", content: params.systemPrompt },
       ...toOpenAIMessages(params.messages),
     ];
-    return {
+    const body: Record<string, unknown> = {
       // Per-call override (from `StreamChatParams.model`) wins over the
       // harness's configured default — lets the orchestrator pick a
       // different model per delegate spawn.
@@ -278,14 +298,14 @@ export class OpenAICompatibleHarness implements LLMHarness {
       temperature: params.temperature ?? 1,
       max_tokens: params.maxTokens ?? 4096,
       stream: true,
-      // Ask for a trailing usage chunk so we can emit normalized token
-      // usage. The OpenAI wire only includes usage in a streamed response
-      // when this is set. Compatible servers (vLLM, LM Studio, OpenRouter,
-      // llama.cpp, recent Ollama) honour it; ones that don't simply omit
-      // the usage chunk and we skip the usage event.
-      stream_options: { include_usage: true },
       tools: params.tools ? toOpenAITools(params.tools) : undefined,
     };
+    // Ask for a trailing usage chunk so we can emit normalized token usage.
+    // The OpenAI wire only includes usage in a streamed response when this
+    // is set. Omitted on the retry path (see streamChat) for endpoints that
+    // reject the field.
+    if (includeUsage) body.stream_options = { include_usage: true };
+    return body;
   }
 }
 
@@ -353,47 +373,6 @@ interface OpenAIStreamChunk {
     finish_reason?: string | null;
   }>;
   usage?: OpenAIUsage | null;
-}
-
-/** OpenAI-style usage. Unlike Anthropic, `prompt_tokens` ALREADY includes
- *  any cached tokens (`prompt_tokens_details.cached_tokens` is a subset, not
- *  an additive bucket) — so context tokens are just prompt + completion. */
-interface OpenAIUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
-}
-
-function normalizeOpenAIUsage(u: OpenAIUsage): RunTokenUsage {
-  const input = u.prompt_tokens ?? 0;
-  const output = u.completion_tokens ?? 0;
-  return {
-    // Do NOT add cached tokens: they're already counted inside prompt_tokens.
-    // contextWindow is intentionally omitted — an arbitrary OpenAI-compatible
-    // endpoint's window isn't knowable here, so the UI shows a token count
-    // rather than a misleading percentage.
-    contextTokens: input + output,
-    inputTokens: input,
-    outputTokens: output,
-  };
-}
-
-/** Map OpenAI's `finish_reason` onto the normalized `RunFinishReason`. */
-function mapOpenAIFinishReason(reason: string | null | undefined): RunFinishReason {
-  switch (reason) {
-    case "stop":
-      return "stop";
-    case "length":
-      return "length";
-    case "tool_calls":
-    case "function_call":
-      return "tool_calls";
-    case "content_filter":
-      return "content_filter";
-    default:
-      return "other";
-  }
 }
 
 /** Synthesise the SDK's `finish` event with neutral defaults — the raw

@@ -23,11 +23,12 @@ import type {
   ToolDefinition,
 } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
-import type {
-  HarnessStreamPart,
-  RunFinishReason,
-  RunTokenUsage,
-} from "$lib/types/run";
+import type { HarnessStreamPart, RunFinishReason } from "$lib/types/run";
+import {
+  claudeUsageToRun,
+  mapClaudeStopReason,
+  type ClaudeUsage,
+} from "./normalize";
 import { parseSSEStream } from "./sse";
 import { getValidClaudeCodeCredentials } from "./claude-code-auth";
 
@@ -162,29 +163,18 @@ export class AnthropicHarness implements LLMHarness {
       { toolCallId: string; toolName: string; inputJson: string }
     >();
 
-    // Token accounting. Anthropic reports the three input buckets as
-    // *additive* (total input = input + cache_read + cache_creation; see
-    // the note on RunTokenUsage), so we sum them rather than treating cache
-    // reads as a subset. `input` arrives on `message_start`; the running
-    // `output` and the `stop_reason` arrive on `message_delta`.
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let sawUsage = false;
+    // Token accounting. The additive cache semantics live in
+    // `claudeUsageToRun` (input arrives on `message_start`; the running
+    // `output` and the `stop_reason` on `message_delta`).
+    let usageAcc: ClaudeUsage | null = null;
     let stopReason: RunFinishReason = "stop";
     // 200k is the standard Claude context window; the 1M beta widens it.
     const contextWindow = this.config.context1m ? 1_000_000 : 200_000;
 
     const completionEvents = (): HarnessStreamPart[] => {
       const events: HarnessStreamPart[] = [];
-      if (sawUsage) {
-        const usage: RunTokenUsage = {
-          contextTokens: inputTokens + outputTokens,
-          contextWindow,
-          inputTokens,
-          outputTokens,
-        };
-        events.push({ type: "run-token-usage", usage });
-      }
+      const usage = usageAcc ? claudeUsageToRun(usageAcc, contextWindow) : null;
+      if (usage) events.push({ type: "run-token-usage", usage });
       events.push({
         type: "run-turn",
         turn: { phase: "completed", finishReason: stopReason },
@@ -261,22 +251,16 @@ export class AnthropicHarness implements LLMHarness {
             toolBlockIds.delete(payload.index);
           }
         } else if (payload.type === "message_start") {
-          const u = payload.message?.usage;
-          if (u) {
-            sawUsage = true;
-            inputTokens =
-              (u.input_tokens ?? 0) +
-              (u.cache_read_input_tokens ?? 0) +
-              (u.cache_creation_input_tokens ?? 0);
-            if (typeof u.output_tokens === "number") outputTokens = u.output_tokens;
-          }
+          if (payload.message?.usage) usageAcc = { ...payload.message.usage };
         } else if (payload.type === "message_delta") {
           if (typeof payload.usage?.output_tokens === "number") {
-            sawUsage = true;
-            outputTokens = payload.usage.output_tokens;
+            usageAcc = {
+              ...(usageAcc ?? {}),
+              output_tokens: payload.usage.output_tokens,
+            };
           }
           if (payload.delta?.stop_reason) {
-            stopReason = mapAnthropicStopReason(payload.delta.stop_reason);
+            stopReason = mapClaudeStopReason(payload.delta.stop_reason);
           }
         } else if (payload.type === "message_stop") {
           yield* completionEvents();
@@ -475,17 +459,8 @@ async function safeReadText(res: NativeFetchResponse): Promise<string> {
   }
 }
 
-/** Anthropic's per-response usage block. The three input buckets are
- *  additive (total input = input + cache_read + cache_creation). */
-interface AnthropicUsage {
-  input_tokens?: number;
-  output_tokens?: number;
-  cache_read_input_tokens?: number | null;
-  cache_creation_input_tokens?: number | null;
-}
-
 type AnthropicStreamEvent =
-  | { type: "message_start"; message: { usage?: AnthropicUsage } }
+  | { type: "message_start"; message: { usage?: ClaudeUsage } }
   | {
       type: "content_block_start";
       index: number;
@@ -509,20 +484,3 @@ type AnthropicStreamEvent =
   | { type: "message_stop" }
   | { type: "ping" }
   | { type: "error"; error: { type: string; message: string } };
-
-/** Map Anthropic's `stop_reason` onto the normalized `RunFinishReason`. */
-function mapAnthropicStopReason(reason: string | null | undefined): RunFinishReason {
-  switch (reason) {
-    case "end_turn":
-    case "stop_sequence":
-      return "stop";
-    case "max_tokens":
-      return "length";
-    case "tool_use":
-      return "tool_calls";
-    case "refusal":
-      return "content_filter";
-    default:
-      return "stop";
-  }
-}
