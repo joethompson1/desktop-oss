@@ -75,10 +75,14 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
     delegate_task: tool({
       description:
         "Spawn a new specialist sub-agent to execute a scoped, self-contained task. " +
-        "Use this for work that touches the filesystem, runs code or tests, or is better " +
-        "suited to a focused worker than the orchestrator. " +
+        "Use this for focused work best handed to a dedicated worker — whether that's a " +
+        "coding/computer task or a non-coding role like a tutor, researcher, critic, or planner. " +
+        "**Match the delegate to the work using the `kind` shown for each entry in the 'Available " +
+        "delegates' section:** pick a *sealed coding agent* for writing/refactoring code, running " +
+        "commands, or filesystem work; pick a *general model* and give it a `role` for anything that's " +
+        "a persona rather than a code change (e.g. 'teach me chapter 2', 'critique this argument'). " +
         "The delegate starts with no memory of this conversation — provide everything it " +
-        "needs in `task` and `context`. " +
+        "needs in `task`, `context`, and (for general delegates) `role`. " +
         "**This tool returns IMMEDIATELY with a runId — it does NOT wait for the delegate to finish.** " +
         "The delegate runs in the background, concurrently with you and with any other delegates " +
         "you've spawned. You can spawn multiple delegates in a row (or in the same turn) and they " +
@@ -115,6 +119,21 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
               "Set this whenever you might want to message_delegate or get_delegate_history later. " +
               "Must be unique within this conversation — reusing a name replaces the previous binding.",
           ),
+        role: z
+          .string()
+          .optional()
+          .describe(
+            "Optional persona / identity for this delegate, written in the second person as if " +
+              "briefing the worker ('You are a patient guitar tutor teaching a complete beginner. " +
+              "Explain one concept at a time and check understanding before moving on.'). " +
+              "**For a *general model* delegate this becomes the delegate's entire system prompt** — " +
+              "it is how you turn a raw model into a tutor, researcher, critic, planner, or any other " +
+              "role, so set it whenever the task is a persona rather than a code change. It persists " +
+              "for the life of the run, including when the user opens the delegate's page and chats " +
+              "with it directly. **For a *sealed coding agent* it is folded into the task brief as " +
+              "framing only** — that agent has its own fixed identity you can't override, so prefer a " +
+              "general delegate when the role really matters. Omit for a plain scoped task with no persona.",
+          ),
         harness: z
           .string()
           .optional()
@@ -140,7 +159,7 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
               "its configured default, which always works.",
           ),
       }),
-      execute: async ({ task, context, filesOfInterest, name, harness, model }, { toolCallId }) => {
+      execute: async ({ task, context, filesOfInterest, name, role, harness, model }, { toolCallId }) => {
         // Pre-allocate the run ID so we can return it to the orchestrator
         // synchronously. The actual `runDelegate` runs in the background —
         // its chunks land in the DB and `get_delegate_history` reads them
@@ -174,6 +193,7 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
             context,
             filesOfInterest,
             name,
+            role,
             model,
             runId,
             workingDirectory: deps.workingDirectory,
@@ -196,8 +216,12 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           name: name ?? null,
           status: "spawned",
           harness: harnessDisplayName,
+          // Boolean, not the role text — the orchestrator just authored `role`
+          // in the call args; echoing it back would keep the full persona in
+          // context twice for the life of the conversation.
+          hasRole: Boolean(role && role.trim()),
           message:
-            `Delegate ${name ? `"${name}"` : `(unnamed, runId ${runId})`} spawned in the background on harness "${harnessDisplayName}". ` +
+            `Delegate ${name ? `"${name}"` : `(unnamed, runId ${runId})`} spawned in the background on harness "${harnessDisplayName}"${role ? " with the role you specified" : ""}. ` +
             `It runs concurrently — you can spawn additional delegates without waiting, and the user can continue chatting. ` +
             `Check its progress with get_delegate_history (use ${name ? `name: "${name}"` : `runId: "${runId}"`}); its live status (RUNNING / SUCCEEDED / FAILED) appears in the 'Active delegate runs' table on every subsequent turn. ` +
             `Do not invent or guess the delegate's output — wait until you've actually seen it via get_delegate_history.`,

@@ -1,4 +1,5 @@
 import type { LLMHarness, ChatMessage } from "$lib/types/harness";
+import { harnessKind } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
 import type { DelegateResult, RunStatus } from "$lib/types/run";
 import {
@@ -15,7 +16,11 @@ import {
   emitRunTextDelta,
 } from "$lib/db/run-events";
 import { getOrchestratorConversationId } from "$lib/db/conversations";
-import { loadDelegatePrompt } from "./prompts";
+import { loadDelegatePrompt, DEFAULT_DELEGATE_PROMPT } from "./prompts";
+import {
+  buildDelegateBrief,
+  composeDelegateSystemPrompt,
+} from "./delegate-prompt";
 
 // Once a run accumulates more than this many reconstructed messages, a
 // rolling context summary is generated after each turn. The last
@@ -34,6 +39,14 @@ export interface DelegateInput {
    *  descriptive (e.g. "researcher", "coder", "reviewer"). Unique within a
    *  conversation — if a name is reused the most recent run wins. */
   name?: string;
+  /** Optional per-spawn role / persona the orchestrator authors for this
+   *  delegate ("You are a patient tutor covering chapter 2 of X…"). For a
+   *  general (raw-LLM) delegate this becomes the delegate's system prompt,
+   *  giving it a full identity; for a sealed coding agent it is folded into
+   *  the task brief as best-effort framing (the agent's own system prompt
+   *  can't be reprogrammed). Persisted on the run so it survives history
+   *  replay and follow-up turns. */
+  role?: string;
   /** Optional model override for this run. Threads through to the
    *  harness's `streamChat(model)` so the orchestrator can pick a
    *  different model than the harness's configured default — e.g.
@@ -87,6 +100,7 @@ export async function runDelegate(
   const conversationId = deps.conversationId ?? getOrchestratorConversationId();
   const title = truncateTitle(input.task);
   const startedAt = performance.now();
+  const kind = harnessKind(harness.type);
 
   await createRun({
     id: runId,
@@ -94,14 +108,15 @@ export async function runDelegate(
     parentMessageId: deps.parentMessageId,
     toolCallId: deps.toolCallId,
     name: input.name,
+    role: input.role,
     title,
     delegateHarnessId: harness.id,
     delegateType: harness.type,
   });
   await updateRunStatus(runId, "RUNNING");
 
-  const systemPrompt = await loadDelegatePrompt();
-  const brief = buildDelegateBrief(input);
+  const systemPrompt = await buildDelegateSystemPrompt(harness, input.role);
+  const brief = buildDelegateBrief(input, kind);
   const messages: ChatMessage[] = [{ role: "user", content: brief }];
 
   await appendChunk({ runId, kind: "user_message", text: brief });
@@ -228,22 +243,23 @@ function errorToText(error: unknown): string {
   }
 }
 
-function buildDelegateBrief(input: DelegateInput): string {
-  const lines: string[] = [`# Task\n${input.task.trim()}`];
-  if (input.workingDirectory && input.workingDirectory.trim()) {
-    lines.push(
-      `\n# Working directory\nResolve relative paths and run filesystem work against:\n${input.workingDirectory.trim()}`,
-    );
-  }
-  if (input.context && input.context.trim()) {
-    lines.push(`\n# Context\n${input.context.trim()}`);
-  }
-  if (input.filesOfInterest && input.filesOfInterest.length > 0) {
-    lines.push(
-      `\n# Files of interest\n${input.filesOfInterest.map((f) => `- ${f}`).join("\n")}`,
-    );
-  }
-  return lines.join("\n");
+/**
+ * Resolve the system prompt for a delegate turn. Recomposed on every turn
+ * (spawn AND every continuation) rather than captured once — a general
+ * delegate's persona lives only in the system prompt, so it must be
+ * reapplied each turn or it evaporates. Single home for that invariant;
+ * called from runDelegate, continueRun, and streamDelegateContinue.
+ */
+async function buildDelegateSystemPrompt(
+  harness: LLMHarness,
+  role: string | undefined,
+): Promise<string> {
+  return composeDelegateSystemPrompt(
+    await loadDelegatePrompt(),
+    role,
+    harnessKind(harness.type),
+    DEFAULT_DELEGATE_PROMPT,
+  );
 }
 
 function truncateTitle(task: string): string {
@@ -467,7 +483,7 @@ export async function continueRun(
   await appendChunk({ runId: input.runId, kind: "user_message", text: input.userMessage });
   await updateRunStatus(input.runId, "RUNNING");
 
-  const systemPrompt = await loadDelegatePrompt();
+  const systemPrompt = await buildDelegateSystemPrompt(harness, run?.role);
   let assistantText = "";
   let status: RunStatus = "RUNNING";
   let errorText: string | undefined;
@@ -591,7 +607,7 @@ export async function* streamDelegateContinue(
         await loadRunMessages(input.runId),
         run?.contextSummary,
       );
-  const systemPrompt = await loadDelegatePrompt();
+  const systemPrompt = await buildDelegateSystemPrompt(harness, run?.role);
 
   let status: RunStatus = "RUNNING";
   let errorText: string | undefined;

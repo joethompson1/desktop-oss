@@ -12,6 +12,7 @@ interface RunRecord {
   parent_message_id: string | null;
   tool_call_id: string | null;
   name: string | null;
+  role: string | null;
   title: string;
   status: string;
   delegate_adapter_id: string | null;
@@ -43,6 +44,9 @@ export async function createRun(input: {
    *  the orchestrator can reference the delegate later by name rather than
    *  the generated run ID. */
   name?: string;
+  /** Optional per-spawn role / persona authored by the orchestrator. See
+   *  RunSummary.role — persisted so the persona survives replay. */
+  role?: string;
   title: string;
   delegateHarnessId?: string;
   delegateType?: string;
@@ -51,16 +55,17 @@ export async function createRun(input: {
   const now = Date.now();
   await db.execute(
     `INSERT INTO runs (
-       id, conversation_id, parent_message_id, tool_call_id, name, title,
+       id, conversation_id, parent_message_id, tool_call_id, name, role, title,
        status, delegate_adapter_id, delegate_type, created_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8, $9)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10)`,
     [
       input.id,
       input.conversationId,
       input.parentMessageId ?? null,
       input.toolCallId ?? null,
       input.name ?? null,
+      input.role ?? null,
       input.title,
       input.delegateHarnessId ?? null,
       input.delegateType ?? null,
@@ -212,6 +217,7 @@ function recordToSummary(r: RunRecord): RunSummary {
     parentMessageId: r.parent_message_id ?? undefined,
     toolCallId: r.tool_call_id ?? undefined,
     name: r.name ?? undefined,
+    role: r.role ?? undefined,
     title: r.title,
     status: r.status as RunStatus,
     delegateHarnessId: r.delegate_adapter_id ?? undefined,

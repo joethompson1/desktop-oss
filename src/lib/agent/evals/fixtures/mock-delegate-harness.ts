@@ -10,6 +10,7 @@
 import type {
   LLMHarness,
   HarnessConfig,
+  HarnessType,
   ProbeResult,
   StreamChatParams,
 } from "$lib/types/harness";
@@ -24,6 +25,13 @@ export interface MockDelegateCall {
 export interface MockDelegateHarnessOptions {
   id?: string;
   name?: string;
+  /** Harness type — drives the delegate's *kind* (sealed vs general) in the
+   *  roster the orchestrator sees. Defaults to `openai-compatible` (a general
+   *  model). Set to e.g. `claude-code` to stand in for a sealed coding agent
+   *  when a scenario needs to test kind-appropriate selection. */
+  type?: HarnessType;
+  /** Free-text description surfaced in the "Available delegates" roster. */
+  description?: string;
   /** Text the mock delegate "replies" with. Streamed in one chunk so the
    *  orchestrator's tool-result block carries it as the delegate's
    *  completion summary. */
@@ -45,6 +53,7 @@ export function makeMockDelegateHarness(
 ): { harness: LLMHarness; calls: MockDelegateCall[] } {
   const id = opts.id ?? "mock-delegate";
   const name = opts.name ?? "Mock Delegate";
+  const type = opts.type ?? "openai-compatible";
   const reply =
     opts.reply ??
     "Done. I completed the requested task and left a note in the report.";
@@ -54,16 +63,17 @@ export function makeMockDelegateHarness(
 
   const config: HarnessConfig = {
     id,
-    type: "openai-compatible",
+    type,
     name,
-    description: "Eval mock delegate — returns a canned completion report.",
+    description:
+      opts.description ?? "Eval mock delegate — returns a canned completion report.",
     model: "mock-delegate-v1",
   };
 
   const harness: LLMHarness = {
     id,
     name,
-    type: "openai-compatible",
+    type,
     config,
     async probe(): Promise<ProbeResult> {
       return { ok: true, latencyMs: 0, message: "mock" };
