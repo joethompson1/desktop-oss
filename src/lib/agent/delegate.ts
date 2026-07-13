@@ -1,7 +1,8 @@
 import type { LLMHarness, ChatMessage } from "$lib/types/harness";
 import { harnessKind } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
-import type { DelegateResult, RunStatus } from "$lib/types/run";
+import type { DelegateResult, HarnessStreamPart, RunStatus } from "$lib/types/run";
+import { isRunEventPart, runEventPartToChunk } from "$lib/types/run";
 import {
   appendChunk,
   createRun,
@@ -139,6 +140,7 @@ export async function runDelegate(
         void updateHarnessSessionId(runId, sessionId).catch(() => {});
       },
     })) {
+      if (await persistIfRunEvent(runId, chunk)) continue;
       if (chunk.type === "text-start") {
         textBuffer[chunk.id] = "";
       } else if (chunk.type === "text-delta") {
@@ -241,6 +243,25 @@ function errorToText(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+/**
+ * If `chunk` is a normalized run-event (todo / usage / turn), persist it as
+ * its matching structured chunk kind and return true so the caller skips its
+ * regular text/tool handling. Returns false for ordinary AI SDK stream parts.
+ *
+ * Shared by the three delegate stream loops (initial spawn, orchestrator
+ * continuation, UI continuation) so the run-event → chunk mapping lives in
+ * exactly one place.
+ */
+async function persistIfRunEvent(
+  runId: string,
+  chunk: HarnessStreamPart,
+): Promise<boolean> {
+  if (!isRunEventPart(chunk)) return false;
+  const { kind, text } = runEventPartToChunk(chunk);
+  await appendChunk({ runId, kind, text });
+  return true;
 }
 
 /**
@@ -498,6 +519,7 @@ export async function continueRun(
         void updateHarnessSessionId(input.runId, sessionId).catch(() => {});
       },
     })) {
+      if (await persistIfRunEvent(input.runId, chunk)) continue;
       if (chunk.type === "text-start") {
         textBuffer[chunk.id] = "";
       } else if (chunk.type === "text-delta") {
@@ -623,6 +645,17 @@ export async function* streamDelegateContinue(
         void updateHarnessSessionId(input.runId, sessionId).catch(() => {});
       },
     })) {
+      // Persist normalized run-events but don't forward them to the
+      // consuming ChatStore — it only understands AI SDK stream parts.
+      // The passive run-detail refresh path picks them up from the DB.
+      // The type predicate also narrows `chunk` back to ChatStreamPart
+      // for the `yield` below.
+      if (isRunEventPart(chunk)) {
+        const { kind, text } = runEventPartToChunk(chunk);
+        await appendChunk({ runId: input.runId, kind, text });
+        continue;
+      }
+
       yield chunk;
 
       if (chunk.type === "text-start") {

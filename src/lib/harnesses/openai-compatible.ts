@@ -19,6 +19,16 @@ import type {
   ToolDefinition,
 } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
+import type {
+  HarnessStreamPart,
+  RunFinishReason,
+  RunTokenUsage,
+} from "$lib/types/run";
+import {
+  mapOpenAIFinishReason,
+  normalizeOpenAIUsage,
+  type OpenAIUsage,
+} from "./normalize";
 import { parseSSEStream } from "./sse";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -55,21 +65,33 @@ export class OpenAICompatibleHarness implements LLMHarness {
 
   async *streamChat(
     params: StreamChatParams,
-  ): AsyncIterable<ChatStreamPart> {
+  ): AsyncIterable<HarnessStreamPart> {
     const url = `${this.#baseUrl()}/chat/completions`;
     const headers = await this.#buildHeaders();
-    const body = this.#buildBody(params);
 
     yield { type: "start" };
 
+    // First attempt asks for a trailing usage chunk via
+    // `stream_options.include_usage`. A few strict endpoints (older Azure
+    // API versions, some proxies) reject that unknown field with a 400/422 —
+    // rather than break a previously-working delegate, retry once without it
+    // (we just forgo the usage chip for this call).
     let response: NativeFetchResponse;
     try {
       response = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(this.#buildBody(params, true)),
         signal: params.signal,
       });
+      if (!response.ok && (response.status === 400 || response.status === 422)) {
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(this.#buildBody(params, false)),
+          signal: params.signal,
+        });
+      }
     } catch (err) {
       yield {
         type: "error",
@@ -100,6 +122,25 @@ export class OpenAICompatibleHarness implements LLMHarness {
       { id: string; name: string; argBuf: string; announced: boolean }
     >();
 
+    // Normalized usage arrives on a trailing chunk (empty `choices`, populated
+    // `usage`) when we requested `stream_options.include_usage`. `flushed`
+    // guards the one-time text-end / tool-call emission when the finish_reason
+    // lands — after that we keep reading only for the usage chunk + [DONE].
+    let usage: RunTokenUsage | undefined;
+    let stopReason: RunFinishReason = "stop";
+    let flushed = false;
+
+    const completionEvents = (): HarnessStreamPart[] => {
+      const events: HarnessStreamPart[] = [];
+      if (usage) events.push({ type: "run-token-usage", usage });
+      events.push({
+        type: "run-turn",
+        turn: { phase: "completed", finishReason: stopReason },
+      });
+      events.push(emptyFinish());
+      return events;
+    };
+
     try {
       for await (const rec of parseSSEStream(response)) {
         if (rec.data === "[DONE]") break;
@@ -109,6 +150,11 @@ export class OpenAICompatibleHarness implements LLMHarness {
         } catch {
           continue;
         }
+
+        // Usage can ride on a trailing chunk with no choices — read it
+        // before the choice guard below.
+        if (payload.usage) usage = normalizeOpenAIUsage(payload.usage);
+
         const choice = payload.choices?.[0];
         if (!choice) continue;
         const delta = choice.delta ?? {};
@@ -161,7 +207,9 @@ export class OpenAICompatibleHarness implements LLMHarness {
           }
         }
 
-        if (choice.finish_reason) {
+        if (choice.finish_reason && !flushed) {
+          flushed = true;
+          stopReason = mapOpenAIFinishReason(choice.finish_reason);
           if (textStarted) yield { type: "text-end", id: textId };
           for (const entry of toolByIndex.values()) {
             let input: unknown = {};
@@ -179,8 +227,7 @@ export class OpenAICompatibleHarness implements LLMHarness {
               input,
             };
           }
-          yield emptyFinish();
-          return;
+          // Keep reading — a trailing usage chunk (and [DONE]) may follow.
         }
       }
     } catch (err) {
@@ -192,8 +239,8 @@ export class OpenAICompatibleHarness implements LLMHarness {
       return;
     }
 
-    if (textStarted) yield { type: "text-end", id: textId };
-    yield emptyFinish();
+    if (!flushed && textStarted) yield { type: "text-end", id: textId };
+    yield* completionEvents();
   }
 
   async probe(): Promise<ProbeResult> {
@@ -234,12 +281,15 @@ export class OpenAICompatibleHarness implements LLMHarness {
     return headers;
   }
 
-  #buildBody(params: StreamChatParams): Record<string, unknown> {
+  #buildBody(
+    params: StreamChatParams,
+    includeUsage: boolean,
+  ): Record<string, unknown> {
     const messages: OpenAIMessage[] = [
       { role: "system", content: params.systemPrompt },
       ...toOpenAIMessages(params.messages),
     ];
-    return {
+    const body: Record<string, unknown> = {
       // Per-call override (from `StreamChatParams.model`) wins over the
       // harness's configured default — lets the orchestrator pick a
       // different model per delegate spawn.
@@ -250,6 +300,12 @@ export class OpenAICompatibleHarness implements LLMHarness {
       stream: true,
       tools: params.tools ? toOpenAITools(params.tools) : undefined,
     };
+    // Ask for a trailing usage chunk so we can emit normalized token usage.
+    // The OpenAI wire only includes usage in a streamed response when this
+    // is set. Omitted on the retry path (see streamChat) for endpoints that
+    // reject the field.
+    if (includeUsage) body.stream_options = { include_usage: true };
+    return body;
   }
 }
 
@@ -316,6 +372,7 @@ interface OpenAIStreamChunk {
     };
     finish_reason?: string | null;
   }>;
+  usage?: OpenAIUsage | null;
 }
 
 /** Synthesise the SDK's `finish` event with neutral defaults — the raw

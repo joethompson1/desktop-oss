@@ -23,6 +23,12 @@ import type {
   ToolDefinition,
 } from "$lib/types/harness";
 import type { ChatStreamPart } from "$lib/types/chat";
+import type { HarnessStreamPart, RunFinishReason } from "$lib/types/run";
+import {
+  claudeUsageToRun,
+  mapClaudeStopReason,
+  type ClaudeUsage,
+} from "./normalize";
 import { parseSSEStream } from "./sse";
 import { getValidClaudeCodeCredentials } from "./claude-code-auth";
 
@@ -114,7 +120,7 @@ export class AnthropicHarness implements LLMHarness {
 
   async *streamChat(
     params: StreamChatParams,
-  ): AsyncIterable<ChatStreamPart> {
+  ): AsyncIterable<HarnessStreamPart> {
     const headers = await this.#buildHeaders();
     const body = await this.#buildRequestBody(params);
 
@@ -156,6 +162,26 @@ export class AnthropicHarness implements LLMHarness {
       number,
       { toolCallId: string; toolName: string; inputJson: string }
     >();
+
+    // Token accounting. The additive cache semantics live in
+    // `claudeUsageToRun` (input arrives on `message_start`; the running
+    // `output` and the `stop_reason` on `message_delta`).
+    let usageAcc: ClaudeUsage | null = null;
+    let stopReason: RunFinishReason = "stop";
+    // 200k is the standard Claude context window; the 1M beta widens it.
+    const contextWindow = this.config.context1m ? 1_000_000 : 200_000;
+
+    const completionEvents = (): HarnessStreamPart[] => {
+      const events: HarnessStreamPart[] = [];
+      const usage = usageAcc ? claudeUsageToRun(usageAcc, contextWindow) : null;
+      if (usage) events.push({ type: "run-token-usage", usage });
+      events.push({
+        type: "run-turn",
+        turn: { phase: "completed", finishReason: stopReason },
+      });
+      events.push(emptyFinish());
+      return events;
+    };
 
     try {
       for await (const record of parseSSEStream(response)) {
@@ -224,8 +250,20 @@ export class AnthropicHarness implements LLMHarness {
             };
             toolBlockIds.delete(payload.index);
           }
+        } else if (payload.type === "message_start") {
+          if (payload.message?.usage) usageAcc = { ...payload.message.usage };
+        } else if (payload.type === "message_delta") {
+          if (typeof payload.usage?.output_tokens === "number") {
+            usageAcc = {
+              ...(usageAcc ?? {}),
+              output_tokens: payload.usage.output_tokens,
+            };
+          }
+          if (payload.delta?.stop_reason) {
+            stopReason = mapClaudeStopReason(payload.delta.stop_reason);
+          }
         } else if (payload.type === "message_stop") {
-          yield emptyFinish();
+          yield* completionEvents();
           return;
         } else if (payload.type === "error") {
           yield {
@@ -244,7 +282,9 @@ export class AnthropicHarness implements LLMHarness {
       return;
     }
 
-    yield emptyFinish();
+    // Stream ended without an explicit `message_stop` — still emit the
+    // normalized completion (usage + turn) alongside the finish.
+    yield* completionEvents();
   }
 
   /** Verify the harness has usable credentials. We deliberately do NOT
@@ -420,7 +460,7 @@ async function safeReadText(res: NativeFetchResponse): Promise<string> {
 }
 
 type AnthropicStreamEvent =
-  | { type: "message_start"; message: unknown }
+  | { type: "message_start"; message: { usage?: ClaudeUsage } }
   | {
       type: "content_block_start";
       index: number;
@@ -436,7 +476,11 @@ type AnthropicStreamEvent =
         | { type: "input_json_delta"; partial_json: string };
     }
   | { type: "content_block_stop"; index: number }
-  | { type: "message_delta"; delta: unknown }
+  | {
+      type: "message_delta";
+      delta: { stop_reason?: string | null };
+      usage?: { output_tokens?: number };
+    }
   | { type: "message_stop" }
   | { type: "ping" }
   | { type: "error"; error: { type: string; message: string } };
