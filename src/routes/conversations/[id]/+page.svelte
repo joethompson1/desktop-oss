@@ -28,11 +28,17 @@
   // the orchestrator chat uses; only loadHistory + send differ.
   const runId = $derived(page.params.id ?? "");
 
-  const store = $derived(
-    new ChatStore({
+  // $derived.by with runId read DURING evaluation — this is what makes a
+  // same-route navigation (delegate page → other delegate page, component
+  // reused) produce a FRESH store. Reading runId only inside the callbacks
+  // would leave the derived dependency-free and the old store (hydrate is
+  // once-only) alive under the new URL.
+  const store = $derived.by(() => {
+    const currentRunId = runId;
+    return new ChatStore({
       loadHistory: async () => {
-        if (!runId) return [];
-        const chunks = await getRunChunks(runId);
+        if (!currentRunId) return [];
+        const chunks = await getRunChunks(currentRunId);
         return chunksToChatTurns(chunks);
       },
       send({ text, skillExpandedBody }) {
@@ -44,15 +50,11 @@
         const modelInputText = skillExpandedBody
           ? `${text}\n\n${skillExpandedBody}`
           : text;
-        const currentRunId = runId;
         // Implicit driver handoff: sending from chat takes ownership of
-        // the session. An idle terminal session is ended automatically
-        // (the composer is hidden while the CLI is MID-turn, so this
-        // never kills in-flight work); the surface flips back to gui so
-        // the SDK drives. The Terminal tab resumes the same session
-        // later if wanted.
+        // the session (waits out a live CLI turn, then ends the terminal
+        // session). To the user it's just turn-based chat.
         return (async function* () {
-          await handoffToChat();
+          await handoffToChat(currentRunId);
           yield* streamDelegateContinue({
             runId: currentRunId,
             userMessage: modelInputText,
@@ -60,8 +62,8 @@
           });
         })();
       },
-    }),
-  );
+    });
+  });
 
   // Reactive run-meta for the title row's status badge + duration.
   let run = $state<RunSummary | null>(null);
@@ -225,7 +227,7 @@
   let view = $state<"chat" | "terminal">("chat");
   let viewInitialized = $state(false);
   $effect(() => {
-    if (!run || viewInitialized) return;
+    if (!run || run.id !== runId || viewInitialized) return;
     viewInitialized = true;
     view = run.surface === "tui" && run.delegateType === "claude-code"
       ? "terminal"
@@ -237,6 +239,21 @@
   let tuiError = $state<string | null>(null);
   let switching = $state(false);
 
+  // Same-route navigation (delegate page → other delegate page) REUSES
+  // this component, so every piece of per-run state must reset when the
+  // param changes — otherwise the previous run's meta/view/terminal bleed
+  // into the new one. (The store handles itself: see the $derived.by note.)
+  $effect(() => {
+    void runId;
+    run = null;
+    usage = null;
+    loadError = null;
+    viewInitialized = false;
+    tuiSession = null;
+    tuiExited = false;
+    tuiError = null;
+  });
+
   // Queued driver switch: the user asked for the terminal while the GUI
   // driver was mid-turn (or the run is still gui-owned). Re-runs when
   // run.status changes, so it fires itself at the turn boundary.
@@ -244,6 +261,7 @@
     if (
       view !== "terminal" ||
       !run ||
+      run.id !== runId ||
       !supportsTui ||
       surface === "tui" ||
       turnInFlight ||
@@ -267,7 +285,13 @@
   // active view and the TUI driver owns the session. The driver is
   // idempotent per runId.
   $effect(() => {
-    if (!run || view !== "terminal" || surface !== "tui" || !supportsTui)
+    if (
+      !run ||
+      run.id !== runId ||
+      view !== "terminal" ||
+      surface !== "tui" ||
+      !supportsTui
+    )
       return;
     const currentRun = run;
     let disposed = false;
@@ -307,23 +331,25 @@
    *  turn to finish first — to the user this is just turn-based chat (your
    *  message goes next); no idle/busy vocabulary ever surfaces. Then end
    *  the terminal session and hand the gui driver the session. No-op when
-   *  the run isn't tui-flagged. */
-  async function handoffToChat(): Promise<void> {
-    const current = run;
-    if (!current) return;
+   *  the run isn't tui-flagged. Takes the run id explicitly so it stays
+   *  correct even if the user navigates to another run mid-send. */
+  async function handoffToChat(rid: string): Promise<void> {
+    if (!rid) return;
     for (;;) {
-      const fresh = await getRun(current.id);
+      const fresh = await getRun(rid);
       if (!fresh || (fresh.surface ?? "gui") !== "tui") return;
-      const live = getTuiSession(current.id);
+      const live = getTuiSession(rid);
       const cliBusy = fresh.status === "RUNNING" && live !== null && !live.exited;
       if (!cliBusy) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    await detachTui(current.id);
-    tuiSession = null;
-    tuiExited = false;
-    await updateRunSurface(current.id, "gui");
-    await refreshRun();
+    await detachTui(rid);
+    if (rid === runId) {
+      tuiSession = null;
+      tuiExited = false;
+    }
+    await updateRunSurface(rid, "gui");
+    if (rid === runId) await refreshRun();
   }
 
   // The real driver handoff TUI→GUI: kill the CLI session so the chat
