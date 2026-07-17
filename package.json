@@ -36,6 +36,8 @@
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-sql": "^2",
     "@tauri-apps/plugin-store": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "ai": "^6.0.182",
     "dompurify": "^3.4.2",
     "highlight.js": "^11.11.1",

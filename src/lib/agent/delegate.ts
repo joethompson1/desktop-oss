@@ -113,6 +113,7 @@ export async function runDelegate(
     title,
     delegateHarnessId: harness.id,
     delegateType: harness.type,
+    workdir: input.workingDirectory,
   });
   await updateRunStatus(runId, "RUNNING");
 
@@ -131,6 +132,7 @@ export async function runDelegate(
     for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
+      workingDirectory: input.workingDirectory,
       ...(input.model ? { model: input.model } : {}),
       onSessionInfo: ({ sessionId }) => {
         // Fire-and-forget — store the harness's session token so
@@ -514,6 +516,7 @@ export async function continueRun(
     for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
+      workingDirectory: run?.workdir,
       resumeSessionId: harnessSessionId,
       onSessionInfo: ({ sessionId }) => {
         void updateHarnessSessionId(input.runId, sessionId).catch(() => {});
@@ -640,6 +643,7 @@ export async function* streamDelegateContinue(
     for await (const chunk of harness.streamChat({
       messages,
       systemPrompt,
+      workingDirectory: run?.workdir,
       resumeSessionId: harnessSessionId,
       onSessionInfo: ({ sessionId }) => {
         void updateHarnessSessionId(input.runId, sessionId).catch(() => {});

@@ -135,6 +135,12 @@ export interface StreamChatParams {
    *  that don't expose model selection (codex profile-only setups,
    *  claude-code-sdk's preset config) ignore this. */
   model?: string;
+  /** Real working directory for the harness's own tooling. The
+   *  claude-code harness passes this as the SDK's `cwd` so the agent's
+   *  file/shell tools resolve against the run's actual workdir — and so
+   *  the on-disk session (keyed by cwd) can be resumed by the interactive
+   *  CLI on the TUI surface. Harnesses without a filesystem ignore it. */
+  workingDirectory?: string;
   /** Resume a prior harness session, when the harness supports session
    *  continuation. For the claude-code-sdk harness this maps to the
    *  SDK's `resume` option — the provider then restores the full session

@@ -23,6 +23,8 @@
     DEFAULT_ORCHESTRATOR_PROMPT,
     DEFAULT_DELEGATE_PROMPT,
   } from "$lib/agent/prompts";
+  import { getSetting, setSetting } from "$lib/db/settings";
+  import { DEFAULT_SURFACE_SETTING_KEY } from "$lib/agent/tui/create";
   import {
     skills as skillsStore,
     refresh as refreshSkills,
@@ -330,6 +332,31 @@
     await harnesses.setDelegateDefault(id);
   }
 
+  // ─── Dual-surface default (Plan 04) ────────────────────────────────────
+  // Which surface a delegate spawns on when the orchestrator doesn't say:
+  // gui (headless chat, default) or tui (interactive terminal). Only
+  // meaningful for terminal-capable harnesses (claude-code), so the
+  // control is shown only when one is configured.
+  let defaultSurface = $state<"gui" | "tui">("gui");
+  let defaultSurfaceLoaded = $state(false);
+  const anyTuiCapable = $derived(
+    harnesses.configs.some((c) => c.type === "claude-code"),
+  );
+
+  $effect(() => {
+    if (tab !== "harnesses" || defaultSurfaceLoaded) return;
+    void (async () => {
+      const stored = await getSetting<string>(DEFAULT_SURFACE_SETTING_KEY);
+      defaultSurface = stored === "tui" ? "tui" : "gui";
+      defaultSurfaceLoaded = true;
+    })();
+  });
+
+  async function saveDefaultSurface(value: "gui" | "tui") {
+    defaultSurface = value;
+    await setSetting(DEFAULT_SURFACE_SETTING_KEY, value);
+  }
+
   // Per-card edit handlers (set-auth-mode, key edit, codex/cursor
   // defaults edit) used to live here. They've moved into
   // `HarnessCard` which owns its own per-instance edit state and
@@ -458,6 +485,30 @@
           }}
         />
       {/each}
+
+      {#if anyTuiCapable}
+        <div class="surface-pref">
+          <div>
+            <h3>Delegate surface</h3>
+            <p class="hint">
+              How delegates on terminal-capable harnesses (Claude Code) start
+              when the orchestrator doesn't specify: headless chat, or the
+              real CLI in an embedded terminal you drive yourself. Every run
+              can be switched between the two views on its page.
+            </p>
+          </div>
+          <select
+            value={defaultSurface}
+            onchange={(e) =>
+              void saveDefaultSurface(
+                e.currentTarget.value === "tui" ? "tui" : "gui",
+              )}
+          >
+            <option value="gui">Chat (headless)</option>
+            <option value="tui">Terminal (interactive)</option>
+          </select>
+        </div>
+      {/if}
 
       {#if !newHarnessOpen}
         <button class="primary add" onclick={() => (newHarnessOpen = true)}>
@@ -935,6 +986,37 @@
 </div>
 
 <style>
+  .surface-pref {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.2em;
+    padding: 0.9em 1em;
+    margin: 0.9em 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .surface-pref h3 {
+    margin: 0 0 0.25em 0;
+    font-size: 0.95em;
+  }
+  .surface-pref .hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    max-width: 46em;
+  }
+  .surface-pref select {
+    flex: 0 0 auto;
+    font-family: inherit;
+    font-size: 0.9em;
+    padding: 0.35em 0.5em;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+  }
+
   .settings {
     flex: 1;
     display: flex;

@@ -33,6 +33,21 @@ export type ChunkKind =
   | "todo_update"
   | "turn";
 
+/** Which surface a delegate run is currently on (Plan 04, dual-surface
+ *  delegates). The two surfaces are views of ONE underlying harness
+ *  session, switchable at turn boundaries:
+ *
+ *  - `gui` — the headless driver (harness SDK in the sidecar), rendered
+ *    as a chat page. The default; an absent surface means gui.
+ *  - `tui` — the real agent CLI running interactively in a PTY, rendered
+ *    as an embedded terminal on the same page. Only harnesses with a
+ *    terminal capability support it (v1: claude-code).
+ *
+ *  Exactly one driver owns the session at a time (single-driver rule);
+ *  the transcript mirror keeps `run_chunks` flowing in TUI mode so the
+ *  orchestrator's monitoring is surface-blind. */
+export type RunSurface = "gui" | "tui";
+
 export interface RunSummary {
   id: string;
   conversationId: string;
@@ -66,6 +81,15 @@ export interface RunSummary {
    *  (`threadId` from the MCP `codex` tool). Raw-LLM harnesses leave
    *  this undefined. */
   harnessSessionId?: string;
+  /** Current surface for dual-surface runs. Absent = "gui". */
+  surface?: RunSurface;
+  /** The run's real working directory, fixed at spawn. Load-bearing for
+   *  dual surfaces: the SDK driver and the TUI CLI must share a cwd or
+   *  Claude Code can't resume the session (its store is keyed by cwd). */
+  workdir?: string;
+  /** For TUI-spawned runs: the task brief to hand the CLI as its first
+   *  prompt when the user first opens the terminal. Cleared once used. */
+  tuiInitialPrompt?: string;
   filesChanged?: string[];
   createdAt: string;
   completedAt?: string;

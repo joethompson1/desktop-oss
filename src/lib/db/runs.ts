@@ -4,7 +4,7 @@ import {
   emitChunkAppended,
   emitRunStatusChanged,
 } from "./run-events";
-import type { ChunkRow, RunStatus, RunSummary } from "$lib/types/run";
+import type { ChunkRow, RunStatus, RunSummary, RunSurface } from "$lib/types/run";
 
 interface RunRecord {
   id: string;
@@ -21,6 +21,9 @@ interface RunRecord {
   summary: string | null;
   context_summary: string | null;
   adapter_session_id: string | null;
+  surface: string | null;
+  workdir: string | null;
+  tui_initial_prompt: string | null;
   files_changed_json: string | null;
   created_at: number;
   completed_at: number | null;
@@ -50,15 +53,22 @@ export async function createRun(input: {
   title: string;
   delegateHarnessId?: string;
   delegateType?: string;
+  /** Surface the run starts on. Omitted = "gui" (see RunSummary.surface). */
+  surface?: RunSurface;
+  /** Real working directory for the run (see RunSummary.workdir). */
+  workdir?: string;
+  /** TUI-spawned runs only: first prompt for the CLI's first launch. */
+  tuiInitialPrompt?: string;
 }): Promise<void> {
   const db = await getDb();
   const now = Date.now();
   await db.execute(
     `INSERT INTO runs (
        id, conversation_id, parent_message_id, tool_call_id, name, role, title,
-       status, delegate_adapter_id, delegate_type, created_at
+       status, delegate_adapter_id, delegate_type, surface, workdir,
+       tui_initial_prompt, created_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10, $11, $12, $13)`,
     [
       input.id,
       input.conversationId,
@@ -69,6 +79,9 @@ export async function createRun(input: {
       input.title,
       input.delegateHarnessId ?? null,
       input.delegateType ?? null,
+      input.surface ?? null,
+      input.workdir ?? null,
+      input.tuiInitialPrompt ?? null,
       now,
     ],
   );
@@ -226,6 +239,9 @@ function recordToSummary(r: RunRecord): RunSummary {
     summary: r.summary ?? undefined,
     contextSummary: r.context_summary ?? undefined,
     harnessSessionId: r.adapter_session_id ?? undefined,
+    surface: (r.surface as RunSurface | null) ?? undefined,
+    workdir: r.workdir ?? undefined,
+    tuiInitialPrompt: r.tui_initial_prompt ?? undefined,
     filesChanged: r.files_changed_json
       ? (JSON.parse(r.files_changed_json) as string[])
       : undefined,
@@ -256,6 +272,34 @@ export async function updateHarnessSessionId(
   await db.execute(
     "UPDATE runs SET adapter_session_id = $1 WHERE id = $2",
     [harnessSessionId, runId],
+  );
+}
+
+/**
+ * Flip a run's current surface (gui <-> tui). Recorded so the run page
+ * reopens on the right view and so message_delegate can refuse cleanly
+ * while the user is driving the CLI interactively.
+ */
+export async function updateRunSurface(
+  runId: string,
+  surface: RunSurface,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE runs SET surface = $1 WHERE id = $2", [
+    surface,
+    runId,
+  ]);
+}
+
+/**
+ * Clear a TUI-spawned run's pending initial prompt once the first launch
+ * has handed it to the CLI — relaunches must not resubmit the brief.
+ */
+export async function clearTuiInitialPrompt(runId: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE runs SET tui_initial_prompt = NULL WHERE id = $1",
+    [runId],
   );
 }
 

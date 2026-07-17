@@ -15,7 +15,13 @@ import { z } from "zod";
 import type { LLMHarness } from "$lib/types/harness";
 import { listMemories, saveMemory, searchMemories } from "$lib/db/memories";
 import { getRun, getRunByName, listRuns } from "$lib/db/runs";
+import { getSetting } from "$lib/db/settings";
 import { continueRun, getRunHistoryForOrchestrator, runDelegate } from "./delegate";
+import {
+  createTuiRun,
+  harnessSupportsTui,
+  DEFAULT_SURFACE_SETTING_KEY,
+} from "./tui/create";
 import { formatToolError } from "./format-error";
 
 export interface OrchestratorToolDeps {
@@ -134,6 +140,20 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
               "framing only** — that agent has its own fixed identity you can't override, so prefer a " +
               "general delegate when the role really matters. Omit for a plain scoped task with no persona.",
           ),
+        surface: z
+          .enum(["gui", "tui"])
+          .optional()
+          .describe(
+            "Which surface to run the delegate on. 'gui' (default): headless — the delegate " +
+              "works autonomously in the background and you read its progress with " +
+              "get_delegate_history. 'tui': the agent's real CLI opens in an interactive " +
+              "terminal that THE USER drives — use it only when the user explicitly asks for " +
+              "a terminal/interactive session. A tui delegate does nothing until the user " +
+              "opens its page and engages; you can still monitor its conversation with " +
+              "get_delegate_history, but you cannot message it while it's in terminal mode. " +
+              "Only terminal-capable delegates support 'tui' (currently the claude-code " +
+              "harness) — requesting it elsewhere fails.",
+          ),
         harness: z
           .string()
           .optional()
@@ -159,7 +179,7 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
               "its configured default, which always works.",
           ),
       }),
-      execute: async ({ task, context, filesOfInterest, name, role, harness, model }, { toolCallId }) => {
+      execute: async ({ task, context, filesOfInterest, name, role, surface, harness, model }, { toolCallId }) => {
         // Pre-allocate the run ID so we can return it to the orchestrator
         // synchronously. The actual `runDelegate` runs in the background —
         // its chunks land in the DB and `get_delegate_history` reads them
@@ -173,14 +193,61 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
         // Resolve the harness eagerly so configuration errors surface in
         // the tool result rather than as silent background failures.
         let harnessDisplayName: string | null = null;
+        let harnessInstance: LLMHarness;
         try {
-          const harnessInstance = deps.resolveDelegateHarness(harness);
-          if (!harnessInstance) {
+          const resolved = deps.resolveDelegateHarness(harness);
+          if (!resolved) {
             return `Error: no delegate harness found${harness ? ` for name "${harness}"` : ""}. Add or configure one in Settings, or check the 'Available delegates' section of the system prompt.`;
           }
+          harnessInstance = resolved;
           harnessDisplayName = harnessInstance.name;
         } catch (err) {
           return `Error resolving delegate harness: ${formatToolError(err)}`;
+        }
+
+        // Dual-surface (Plan 04): explicit `surface` wins; otherwise the
+        // user's default-surface preference applies to terminal-capable
+        // harnesses. Everything else is gui.
+        let effectiveSurface: "gui" | "tui" = surface ?? "gui";
+        if (!surface && harnessSupportsTui(harnessInstance)) {
+          const pref = await getSetting<string>(DEFAULT_SURFACE_SETTING_KEY).catch(
+            () => null,
+          );
+          if (pref === "tui") effectiveSurface = "tui";
+        }
+        if (effectiveSurface === "tui") {
+          if (!harnessSupportsTui(harnessInstance)) {
+            return `Error: harness "${harnessDisplayName}" has no terminal surface. TUI delegates currently require a claude-code harness; omit \`surface\` to run this delegate headless.`;
+          }
+          try {
+            const tuiRunId = await createTuiRun({
+              conversationId: deps.conversationId,
+              harness: harnessInstance,
+              task,
+              context,
+              filesOfInterest,
+              name,
+              role,
+              workingDirectory: deps.workingDirectory,
+              toolCallId,
+            });
+            return {
+              runId: tuiRunId,
+              name: name ?? null,
+              status: "awaiting_user",
+              surface: "tui",
+              harness: harnessDisplayName,
+              hasRole: Boolean(role && role.trim()),
+              message:
+                `Terminal delegate ${name ? `"${name}"` : `(runId ${tuiRunId})`} created on harness "${harnessDisplayName}". ` +
+                `It runs as the agent's real CLI in an interactive terminal that the USER drives — it does nothing until the user opens its page and starts working. ` +
+                `The task brief will be handed to the CLI as its first prompt on launch. ` +
+                `You can monitor its conversation with get_delegate_history (its transcript is mirrored live), but message_delegate is unavailable while it is in terminal mode. ` +
+                `Tell the user the terminal agent is ready and where to find it (in this conversation's delegate list).`,
+            };
+          } catch (err) {
+            return `Error creating terminal delegate: ${formatToolError(err)}`;
+          }
         }
 
         // Fire-and-forget. We catch on the promise so an unexpected
@@ -276,6 +343,12 @@ function buildEssentialTools(deps: OrchestratorToolDeps): ToolSet {
           }
 
           const existingRun = await getRun(targetRunId);
+          if (existingRun?.surface === "tui") {
+            return (
+              `Error: delegate ${name ? `"${name}"` : targetRunId} is in interactive terminal mode — the user is driving it directly, so messages can't be injected. ` +
+              `You can still follow its conversation with get_delegate_history. It becomes messageable if the user switches it back to the chat view.`
+            );
+          }
           const result = await continueRun(
             { runId: targetRunId, userMessage: message },
             {

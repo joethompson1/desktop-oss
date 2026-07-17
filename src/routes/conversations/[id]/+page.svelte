@@ -12,8 +12,17 @@
   import { harnesses } from "$lib/stores/harnesses.svelte";
   import { ChatStore } from "$lib/stores/chat-store.svelte";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
+  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
   import { harnessToSourceFamily } from "$lib/skills/harness-family";
   import type { HarnessType } from "$lib/types/harness";
+  import { updateRunSurface } from "$lib/db/runs";
+  import {
+    attachTui,
+    detachTui,
+    getTuiSession,
+    relaunchTui,
+    type TuiSession,
+  } from "$lib/agent/tui/driver";
 
   // One ChatStore per page mount — bound to this specific run. Same class
   // the orchestrator chat uses; only loadHistory + send differ.
@@ -188,6 +197,92 @@
     };
   });
 
+  // ─── Dual-surface (Plan 04): gui chat vs tui terminal ────────────────
+  // Two views of ONE harness session. Exactly one driver owns the session
+  // at a time; switching is only offered at turn boundaries (status not
+  // RUNNING), which is the single-driver rule made visible.
+  const surface = $derived(run?.surface ?? "gui");
+  // v1 capability gate: only the claude-code harness has a TUI story
+  // (session pinning + hooks + on-disk transcript). Other harnesses never
+  // see the toggle — capability gates, not degraded modes.
+  const supportsTui = $derived(run?.delegateType === "claude-code");
+  const turnInFlight = $derived(run?.status === "RUNNING");
+
+  let tuiSession = $state<TuiSession | null>(null);
+  let tuiExited = $state(false);
+  let tuiError = $state<string | null>(null);
+  let switching = $state(false);
+
+  // Attach (or re-attach after navigation) whenever the run is on the
+  // TUI surface. The driver is idempotent per runId.
+  $effect(() => {
+    if (!run || surface !== "tui" || !supportsTui) return;
+    const currentRun = run;
+    let disposed = false;
+    let unsubscribe: (() => void) | null = null;
+    void (async () => {
+      try {
+        const session =
+          getTuiSession(currentRun.id) ?? (await attachTui(currentRun));
+        if (disposed) return;
+        tuiSession = session;
+        tuiExited = session.exited;
+        tuiError = null;
+        unsubscribe = session.onChange(() => {
+          tuiExited = session.exited;
+        });
+      } catch (err) {
+        if (!disposed) {
+          tuiError =
+            err instanceof Error ? err.message : "Failed to start terminal";
+        }
+      }
+    })();
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  });
+
+  async function switchToTui() {
+    if (!run || switching || turnInFlight || !supportsTui) return;
+    switching = true;
+    try {
+      await updateRunSurface(run.id, "tui");
+      await refreshRun(); // effect above attaches
+    } finally {
+      switching = false;
+    }
+  }
+
+  async function switchToGui() {
+    if (!run || switching || turnInFlight) return;
+    switching = true;
+    try {
+      await detachTui(run.id);
+      tuiSession = null;
+      tuiExited = false;
+      await updateRunSurface(run.id, "gui");
+      await refreshRun();
+      await store.refresh(); // pull in the chunks the mirror persisted
+      await refreshUsage();
+    } finally {
+      switching = false;
+    }
+  }
+
+  async function relaunch() {
+    if (!run) return;
+    tuiError = null;
+    try {
+      await relaunchTui(run.id);
+      tuiExited = getTuiSession(run.id)?.exited ?? false;
+    } catch (err) {
+      tuiError =
+        err instanceof Error ? err.message : "Failed to relaunch terminal";
+    }
+  }
+
   const statusLabel = $derived(run?.status.toLowerCase() ?? "");
   const durationLabel = $derived.by(() => {
     if (!run?.completedAt || !run.createdAt) return null;
@@ -224,6 +319,35 @@
       {#if usageChip}
         <span class="ctx" title={usageChip.title}>{usageChip.label}</span>
       {/if}
+      {#if supportsTui}
+        <div
+          class="mode-toggle"
+          role="group"
+          aria-label="Delegate surface"
+          title={turnInFlight
+            ? "Finish the current turn before switching views"
+            : "Switch between chat and terminal views of this session"}
+        >
+          <button
+            type="button"
+            class="mode"
+            data-active={surface === "gui"}
+            disabled={switching || (surface === "tui" && turnInFlight)}
+            onclick={() => void switchToGui()}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            class="mode"
+            data-active={surface === "tui"}
+            disabled={switching || (surface === "gui" && turnInFlight)}
+            onclick={() => void switchToTui()}
+          >
+            Terminal
+          </button>
+        </div>
+      {/if}
       <span class="status" data-status={run.status}>{statusLabel}</span>
     {/if}
   </div>
@@ -232,12 +356,34 @@
     <div class="banner err">Couldn't load run: {loadError}</div>
   {/if}
 
-  <ChatSurface
-    {store}
-    allowAttachments={false}
-    composerPlaceholder={composerPlaceholder}
-    sourceFilter={skillSourceFilter}
-  />
+  {#if surface === "tui" && supportsTui}
+    {#if tuiError}
+      <div class="banner err">Terminal error: {tuiError}</div>
+    {/if}
+    {#if tuiSession}
+      <TerminalPane session={tuiSession} />
+      {#if tuiExited}
+        <div class="tui-exit-bar">
+          <span>The CLI session ended.</span>
+          <button type="button" onclick={() => void relaunch()}>
+            Relaunch
+          </button>
+          <button type="button" onclick={() => void switchToGui()}>
+            Back to chat view
+          </button>
+        </div>
+      {/if}
+    {:else if !tuiError}
+      <div class="banner">Starting terminal…</div>
+    {/if}
+  {:else}
+    <ChatSurface
+      {store}
+      allowAttachments={false}
+      composerPlaceholder={composerPlaceholder}
+      sourceFilter={skillSourceFilter}
+    />
+  {/if}
 </div>
 
 <style>
@@ -305,6 +451,51 @@
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     cursor: default;
+  }
+  .mode-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .mode {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.78em;
+    padding: 0.2em 0.75em;
+    cursor: pointer;
+  }
+  .mode[data-active="true"] {
+    background: var(--bg-elevated);
+    color: var(--text);
+  }
+  .mode:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tui-exit-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    padding: 0.6em 1.4em 1em 1.4em;
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .tui-exit-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.25em 0.7em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+  }
+  .tui-exit-bar button:hover {
+    background: var(--hover-bg);
   }
   .status {
     flex: 0 0 auto;

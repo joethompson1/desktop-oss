@@ -8,6 +8,8 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod skills;
 use skills::{list_skill_files, run_skill_shell, watch_skill_dirs};
+mod tui;
+use tui::{pty_alive, pty_kill, pty_resize, pty_spawn, pty_write, tail_file, tail_stop};
 
 const MAX_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
 
@@ -1185,6 +1187,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0006_delegate_role.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "dual-surface delegates",
+            sql: include_str!("../migrations/0007_dual_surface.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -1218,6 +1226,13 @@ pub fn run() {
             list_skill_files,
             watch_skill_dirs,
             run_skill_shell,
+            pty_spawn,
+            pty_write,
+            pty_resize,
+            pty_kill,
+            pty_alive,
+            tail_file,
+            tail_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
