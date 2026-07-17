@@ -113,6 +113,25 @@ class ConversationsStore {
       : [...this.#expandedIds, id];
   }
 
+  /** Expand a session group if collapsed; no-op otherwise. Used by the
+   *  sidebar's route-follower so the group containing the page you're ON
+   *  stays open — the user can always see where they are and which
+   *  sibling agents belong to that session. */
+  ensureExpanded(id: string): void {
+    if (!this.#expandedIds.includes(id)) {
+      this.#expandedIds = [...this.#expandedIds, id];
+    }
+  }
+
+  /** Which session owns a delegate run, or null while runs are still
+   *  loading. Reactive — callers inside effects re-run when runs land. */
+  sessionIdForRun(runId: string): string | null {
+    for (const [cid, list] of Object.entries(this.#runs)) {
+      if (list.some((r) => r.id === runId)) return cid;
+    }
+    return null;
+  }
+
   async hydrate(): Promise<void> {
     if (this.#hydrated || this.#hydrating) return;
     this.#hydrating = true;
