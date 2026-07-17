@@ -17,9 +17,21 @@ on:
   # fresh review on those events.)
   pull_request:
     types: [opened]
+  # Manual re-run: comment "@claude review" on the PR (owner / member /
+  # collaborator only — the job-level `if` below enforces both the phrase
+  # and the author gate, so drive-by comments can't burn tokens).
+  issue_comment:
+    types: [created]
 
 jobs:
   review:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '@claude review') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,6 +42,10 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 1
+          # On comment triggers the default checkout would be MAIN, and the
+          # reviewer's Read/Grep would inspect the wrong tree — pin the PR's
+          # merge ref instead. Empty ref = event default for pull_request.
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', github.event.issue.number) || '' }}
 
       - name: Multi-agent PR review with Claude
         uses: anthropics/claude-code-action@v1
@@ -38,7 +54,7 @@ jobs:
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
 
             You are the LEAD reviewer for this PR in desktop-oss — a local-first,
             modular agent workspace (Tauri v2 + SvelteKit, Svelte 5 runes, TS
