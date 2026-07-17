@@ -396,32 +396,11 @@
     <div class="banner err">Couldn't load run: {loadError}</div>
   {/if}
 
-  {#if view === "terminal" && supportsTui}
+  {#if view === "terminal" && supportsTui && surface === "tui"}
     {#if tuiError}
       <div class="banner err">Terminal error: {tuiError}</div>
     {/if}
-    {#if surface !== "tui"}
-      <!-- Queued driver switch: keep the LIVE conversation visible while
-           waiting for the turn boundary — an empty wait-screen hides the
-           very output the user is supervising. -->
-      <div class="tui-pending-bar">
-        <span>
-          {turnInFlight
-            ? "Finishing the current turn — the terminal will open as soon as it's done. Live output below."
-            : "Opening terminal…"}
-        </span>
-        <button type="button" onclick={() => (view = "chat")}>
-          Stay in chat
-        </button>
-      </div>
-      <ChatSurface
-        {store}
-        allowAttachments={false}
-        composerPlaceholder={composerPlaceholder}
-        sourceFilter={skillSourceFilter}
-        showComposer={false}
-      />
-    {:else if tuiSession}
+    {#if tuiSession}
       <TerminalPane session={tuiSession} />
       {#if tuiExited}
         <div class="tui-exit-bar">
@@ -444,6 +423,23 @@
       <div class="banner">Starting terminal…</div>
     {/if}
   {:else}
+    <!-- ONE ChatSurface instance serves both the chat view and the
+         queued-switch (terminal-pending) view — remounting it mid-stream
+         loses scroll/streaming state for no benefit. The composer stays
+         available whenever the GUI driver owns the session, pending or
+         not: hiding it turned any wedged turn into a dead end. -->
+    {#if view === "terminal" && supportsTui}
+      <div class="tui-pending-bar">
+        <span>
+          {turnInFlight
+            ? "Finishing the current turn — the terminal will open as soon as it's done. Live output below."
+            : "Opening terminal…"}
+        </span>
+        <button type="button" onclick={() => (view = "chat")}>
+          Stay in chat
+        </button>
+      </div>
+    {/if}
     <ChatSurface
       {store}
       allowAttachments={false}

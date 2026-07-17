@@ -637,8 +637,16 @@ export async function* streamDelegateContinue(
   let status: RunStatus = "RUNNING";
   let errorText: string | undefined;
   let assistantText = "";
+  let finalized = false;
   const textBuffer: Record<string, string> = {};
 
+  // The consumer (ChatStore) can abandon this generator mid-stream —
+  // component teardown, a dev-server reload, a thrown render error. An
+  // abandoned `yield` resumes straight into `finally`, skipping the
+  // normal post-loop finalization, and without this guard the run row
+  // stays RUNNING forever: the page then waits on a turn boundary that
+  // never comes (queued surface switches, status badge, composer gating
+  // all wedge). Belt-and-braces: finalize to CANCELLED on that path.
   try {
     for await (const chunk of harness.streamChat({
       messages,
@@ -707,6 +715,11 @@ export async function* streamDelegateContinue(
     status = "FAILED";
     await appendChunk({ runId: input.runId, kind: "stderr", text: errorText });
     yield { type: "error", error: errorText };
+  } finally {
+    if (!finalized && status === "RUNNING") {
+      await finalizeAbandonedTurn(input.runId, assistantText);
+      finalized = true;
+    }
   }
 
   for (const segment of Object.values(textBuffer)) {
@@ -717,10 +730,24 @@ export async function* streamDelegateContinue(
   }
 
   const summary = assistantText.trim() || errorText || "(no output)";
+  finalized = true;
   await updateRunStatus(input.runId, status, { summary });
 
   const updatedMessages = await loadRunMessages(input.runId);
   await maybeUpdateContextSummary(input.runId, updatedMessages, harness).catch(() => {});
+}
+
+/** Shared tail of streamDelegateContinue's abandonment guard — kept out of
+ *  the generator body so the finally block stays one readable line. */
+async function finalizeAbandonedTurn(
+  runId: string,
+  assistantText: string,
+): Promise<void> {
+  await updateRunStatus(runId, "CANCELLED", {
+    summary:
+      (assistantText.trim() ? assistantText.trim() + "\n\n" : "") +
+      "(turn interrupted before completion)",
+  }).catch(() => {});
 }
 
 /**
