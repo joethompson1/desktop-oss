@@ -198,9 +198,13 @@
   });
 
   // ─── Dual-surface (Plan 04): gui chat vs tui terminal ────────────────
-  // Two views of ONE harness session. Exactly one driver owns the session
-  // at a time; switching is only offered at turn boundaries (status not
-  // RUNNING), which is the single-driver rule made visible.
+  // Two views of ONE harness session. `surface` records which DRIVER owns
+  // the session (persisted); `view` is what the user is looking at and is
+  // ALWAYS free to change — the single-driver rule gates driver handoffs,
+  // never sightseeing. The transcript mirror keeps run_chunks live during
+  // TUI turns, so the chat view renders read-only while the CLI works; a
+  // terminal request during a GUI turn queues and completes itself at the
+  // turn boundary instead of presenting a dead button.
   const surface = $derived(run?.surface ?? "gui");
   // v1 capability gate: only the claude-code harness has a TUI story
   // (session pinning + hooks + on-disk transcript). Other harnesses never
@@ -208,15 +212,53 @@
   const supportsTui = $derived(run?.delegateType === "claude-code");
   const turnInFlight = $derived(run?.status === "RUNNING");
 
+  let view = $state<"chat" | "terminal">("chat");
+  let viewInitialized = $state(false);
+  $effect(() => {
+    if (!run || viewInitialized) return;
+    viewInitialized = true;
+    view = run.surface === "tui" && run.delegateType === "claude-code"
+      ? "terminal"
+      : "chat";
+  });
+
   let tuiSession = $state<TuiSession | null>(null);
   let tuiExited = $state(false);
   let tuiError = $state<string | null>(null);
   let switching = $state(false);
 
-  // Attach (or re-attach after navigation) whenever the run is on the
-  // TUI surface. The driver is idempotent per runId.
+  // Queued driver switch: the user asked for the terminal while the GUI
+  // driver was mid-turn (or the run is still gui-owned). Re-runs when
+  // run.status changes, so it fires itself at the turn boundary.
   $effect(() => {
-    if (!run || surface !== "tui" || !supportsTui) return;
+    if (
+      view !== "terminal" ||
+      !run ||
+      !supportsTui ||
+      surface === "tui" ||
+      turnInFlight ||
+      switching
+    ) {
+      return;
+    }
+    const currentRun = run;
+    void (async () => {
+      switching = true;
+      try {
+        await updateRunSurface(currentRun.id, "tui");
+        await refreshRun();
+      } finally {
+        switching = false;
+      }
+    })();
+  });
+
+  // Attach (or re-attach after navigation) while the terminal is the
+  // active view and the TUI driver owns the session. The driver is
+  // idempotent per runId.
+  $effect(() => {
+    if (!run || view !== "terminal" || surface !== "tui" || !supportsTui)
+      return;
     const currentRun = run;
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
@@ -250,18 +292,10 @@
     };
   });
 
-  async function switchToTui() {
-    if (!run || switching || turnInFlight || !supportsTui) return;
-    switching = true;
-    try {
-      await updateRunSurface(run.id, "tui");
-      await refreshRun(); // effect above attaches
-    } finally {
-      switching = false;
-    }
-  }
-
-  async function switchToGui() {
+  // The real driver handoff TUI→GUI: kill the CLI session so the chat
+  // composer can drive again. Gated at turn boundaries — this is the
+  // destructive direction (a live CLI turn would be cancelled).
+  async function endTerminalSession() {
     if (!run || switching || turnInFlight) return;
     switching = true;
     try {
@@ -333,26 +367,22 @@
         <div
           class="mode-toggle"
           role="group"
-          aria-label="Delegate surface"
-          title={turnInFlight
-            ? "Finish the current turn before switching views"
-            : "Switch between chat and terminal views of this session"}
+          aria-label="Delegate view"
+          title="Switch between chat and terminal views of this session"
         >
           <button
             type="button"
             class="mode"
-            data-active={surface === "gui"}
-            disabled={switching || (surface === "tui" && turnInFlight)}
-            onclick={() => void switchToGui()}
+            data-active={view === "chat"}
+            onclick={() => (view = "chat")}
           >
             Chat
           </button>
           <button
             type="button"
             class="mode"
-            data-active={surface === "tui"}
-            disabled={switching || (surface === "gui" && turnInFlight)}
-            onclick={() => void switchToTui()}
+            data-active={view === "terminal"}
+            onclick={() => (view = "terminal")}
           >
             Terminal
           </button>
@@ -366,11 +396,17 @@
     <div class="banner err">Couldn't load run: {loadError}</div>
   {/if}
 
-  {#if surface === "tui" && supportsTui}
+  {#if view === "terminal" && supportsTui}
     {#if tuiError}
       <div class="banner err">Terminal error: {tuiError}</div>
     {/if}
-    {#if tuiSession}
+    {#if surface !== "tui"}
+      <div class="tui-pending">
+        {turnInFlight
+          ? "Finishing the current turn — the terminal will open as soon as it's done."
+          : "Opening terminal…"}
+      </div>
+    {:else if tuiSession}
       <TerminalPane session={tuiSession} />
       {#if tuiExited}
         <div class="tui-exit-bar">
@@ -378,8 +414,14 @@
           <button type="button" onclick={() => void relaunch()}>
             Relaunch
           </button>
-          <button type="button" onclick={() => void switchToGui()}>
-            Back to chat view
+          <button
+            type="button"
+            onclick={() => {
+              view = "chat";
+              void endTerminalSession();
+            }}
+          >
+            Continue in chat
           </button>
         </div>
       {/if}
@@ -392,7 +434,25 @@
       allowAttachments={false}
       composerPlaceholder={composerPlaceholder}
       sourceFilter={skillSourceFilter}
+      showComposer={surface !== "tui"}
     />
+    {#if surface === "tui"}
+      <div class="tui-lock-bar">
+        <span>
+          Terminal session is active — the conversation updates live here.
+        </span>
+        <button
+          type="button"
+          disabled={switching || turnInFlight}
+          title={turnInFlight
+            ? "Waiting for the CLI to finish its current turn"
+            : "Kill the CLI session and continue in chat"}
+          onclick={() => void endTerminalSession()}
+        >
+          End terminal session & chat
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -483,6 +543,42 @@
     color: var(--text);
   }
   .mode:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tui-pending {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    margin: 0 1.4em 1em 1.4em;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .tui-lock-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    padding: 0.6em 1.4em 1em 1.4em;
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .tui-lock-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.25em 0.7em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+  }
+  .tui-lock-bar button:hover:not(:disabled) {
+    background: var(--hover-bg);
+  }
+  .tui-lock-bar button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
