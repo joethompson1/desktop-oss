@@ -126,7 +126,17 @@ jobs:
                    recommendation. If there is NO blocker, do NOT submit any
                    review — no `--comment`, no summary; the inline comments stand
                    on their own.
-                 • If there are NO confirmed findings at all, do nothing.
+                 • If there are NO confirmed findings at all, post no inline
+                   comments and no review.
+
+            5) FINALIZE (never skip — the LAST thing you do, on every path,
+               including zero findings and early failures): update your
+               tracking/progress comment so it reflects reality — check off
+               every completed todo item and append one closing line:
+               "Review complete — N confirmed findings posted" (or
+               "Review complete — no confirmed findings"). A tracking comment
+               left half-checked after the run ends is indistinguishable from
+               a crashed run; silence is not a valid completion signal.
 
             Cite file:line, give concrete repros, invent nothing, and never post
             praise. A senior dev's nitpicks and improvement suggestions ARE
