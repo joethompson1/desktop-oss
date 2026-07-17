@@ -302,40 +302,23 @@
     };
   });
 
-  // Keep the page honest about LIVENESS, independent of which view is
-  // showing: the persisted `surface` says who OWNS the session; the
-  // driver registry says whether a CLI is actually ALIVE. The chat
-  // view's composer/lock-bar key off liveness — a dead or never-started
-  // terminal session must not lock the composer behind a lie.
-  $effect(() => {
-    if (!run || surface !== "tui") return;
-    void view; // re-sync when the user flips views
-    const existing = getTuiSession(run.id);
-    if (!existing) {
-      tuiSession = null;
-      tuiExited = false;
-      return;
-    }
-    tuiSession = existing;
-    tuiExited = existing.exited;
-    return existing.onChange(() => {
-      tuiExited = existing.exited;
-    });
-  });
-
-  /** A live CLI currently owns the session (spawned and not exited).
-   *  This — not the persisted surface flag — gates the chat composer. */
-  const terminalActive = $derived(
-    surface === "tui" && tuiSession !== null && !tuiExited,
-  );
-
-  /** Silent version of the handoff used by send(): end any live-but-idle
-   *  terminal session and return ownership to the gui driver. No-op when
-   *  the run isn't tui-flagged. Safe by construction — the composer is
-   *  hidden while the CLI is mid-turn, so send() can't reach this then. */
+  /** Silent handoff used by send(): the user's message takes ownership of
+   *  the session. If the agent is mid-turn on the terminal, wait for that
+   *  turn to finish first — to the user this is just turn-based chat (your
+   *  message goes next); no idle/busy vocabulary ever surfaces. Then end
+   *  the terminal session and hand the gui driver the session. No-op when
+   *  the run isn't tui-flagged. */
   async function handoffToChat(): Promise<void> {
     const current = run;
-    if (!current || (current.surface ?? "gui") !== "tui") return;
+    if (!current) return;
+    for (;;) {
+      const fresh = await getRun(current.id);
+      if (!fresh || (fresh.surface ?? "gui") !== "tui") return;
+      const live = getTuiSession(current.id);
+      const cliBusy = fresh.status === "RUNNING" && live !== null && !live.exited;
+      if (!cliBusy) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
     await detachTui(current.id);
     tuiSession = null;
     tuiExited = false;
@@ -385,9 +368,7 @@
     return `${Math.round(ms / 100) / 10}s`;
   });
   const composerPlaceholder = $derived(
-    terminalActive
-      ? "Send a message — this ends the idle terminal session and continues in chat…"
-      : `Talk to ${harnesses.delegateConfig?.name ?? "the delegate"}…`,
+    `Talk to ${harnesses.delegateConfig?.name ?? "the delegate"}…`,
   );
   const skillSourceFilter = $derived(
     harnessToSourceFamily(run?.delegateType as HarnessType | undefined),
@@ -496,16 +477,7 @@
       allowAttachments={false}
       composerPlaceholder={composerPlaceholder}
       sourceFilter={skillSourceFilter}
-      showComposer={!(terminalActive && turnInFlight)}
     />
-    {#if terminalActive && turnInFlight}
-      <div class="tui-lock-bar">
-        <span>
-          The terminal is finishing its turn — the conversation updates
-          live here, and chat unlocks the moment it's done.
-        </span>
-      </div>
-    {/if}
   {/if}
 </div>
 
@@ -625,14 +597,6 @@
   }
   .tui-pending-bar button:hover {
     background: var(--hover-bg);
-  }
-  .tui-lock-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.8em;
-    padding: 0.6em 1.4em 1em 1.4em;
-    color: var(--text-muted);
-    font-size: 0.9em;
   }
   .tui-exit-bar {
     display: flex;
