@@ -401,11 +401,26 @@
       <div class="banner err">Terminal error: {tuiError}</div>
     {/if}
     {#if surface !== "tui"}
-      <div class="tui-pending">
-        {turnInFlight
-          ? "Finishing the current turn — the terminal will open as soon as it's done."
-          : "Opening terminal…"}
+      <!-- Queued driver switch: keep the LIVE conversation visible while
+           waiting for the turn boundary — an empty wait-screen hides the
+           very output the user is supervising. -->
+      <div class="tui-pending-bar">
+        <span>
+          {turnInFlight
+            ? "Finishing the current turn — the terminal will open as soon as it's done. Live output below."
+            : "Opening terminal…"}
+        </span>
+        <button type="button" onclick={() => (view = "chat")}>
+          Stay in chat
+        </button>
       </div>
+      <ChatSurface
+        {store}
+        allowAttachments={false}
+        composerPlaceholder={composerPlaceholder}
+        sourceFilter={skillSourceFilter}
+        showComposer={false}
+      />
     {:else if tuiSession}
       <TerminalPane session={tuiSession} />
       {#if tuiExited}
@@ -546,16 +561,32 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .tui-pending {
+  .tui-pending-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex: 1;
-    margin: 0 1.4em 1em 1.4em;
+    gap: 0.8em;
+    margin: 0 1.4em 0.6em 1.4em;
+    padding: 0.45em 0.8em;
     border: 1px dashed var(--border);
     border-radius: 10px;
     color: var(--text-muted);
-    font-size: 0.9em;
+    font-size: 0.85em;
+  }
+  .tui-pending-bar span {
+    flex: 1 1 auto;
+  }
+  .tui-pending-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.2em 0.6em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95em;
+  }
+  .tui-pending-bar button:hover {
+    background: var(--hover-bg);
   }
   .tui-lock-bar {
     display: flex;
