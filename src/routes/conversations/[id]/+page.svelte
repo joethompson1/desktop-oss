@@ -44,11 +44,21 @@
         const modelInputText = skillExpandedBody
           ? `${text}\n\n${skillExpandedBody}`
           : text;
-        return streamDelegateContinue({
-          runId,
-          userMessage: modelInputText,
-          resolveDelegateHarness: () => harnesses.resolveDelegate(),
-        });
+        const currentRunId = runId;
+        // Implicit driver handoff: sending from chat takes ownership of
+        // the session. An idle terminal session is ended automatically
+        // (the composer is hidden while the CLI is MID-turn, so this
+        // never kills in-flight work); the surface flips back to gui so
+        // the SDK drives. The Terminal tab resumes the same session
+        // later if wanted.
+        return (async function* () {
+          await handoffToChat();
+          yield* streamDelegateContinue({
+            runId: currentRunId,
+            userMessage: modelInputText,
+            resolveDelegateHarness: () => harnesses.resolveDelegate(),
+          });
+        })();
       },
     }),
   );
@@ -319,6 +329,20 @@
     surface === "tui" && tuiSession !== null && !tuiExited,
   );
 
+  /** Silent version of the handoff used by send(): end any live-but-idle
+   *  terminal session and return ownership to the gui driver. No-op when
+   *  the run isn't tui-flagged. Safe by construction — the composer is
+   *  hidden while the CLI is mid-turn, so send() can't reach this then. */
+  async function handoffToChat(): Promise<void> {
+    const current = run;
+    if (!current || (current.surface ?? "gui") !== "tui") return;
+    await detachTui(current.id);
+    tuiSession = null;
+    tuiExited = false;
+    await updateRunSurface(current.id, "gui");
+    await refreshRun();
+  }
+
   // The real driver handoff TUI→GUI: kill the CLI session so the chat
   // composer can drive again. Gated at turn boundaries — this is the
   // destructive direction (a live CLI turn would be cancelled).
@@ -361,7 +385,9 @@
     return `${Math.round(ms / 100) / 10}s`;
   });
   const composerPlaceholder = $derived(
-    `Talk to ${harnesses.delegateConfig?.name ?? "the delegate"}…`,
+    terminalActive
+      ? "Send a message — this ends the idle terminal session and continues in chat…"
+      : `Talk to ${harnesses.delegateConfig?.name ?? "the delegate"}…`,
   );
   const skillSourceFilter = $derived(
     harnessToSourceFamily(run?.delegateType as HarnessType | undefined),
@@ -470,23 +496,14 @@
       allowAttachments={false}
       composerPlaceholder={composerPlaceholder}
       sourceFilter={skillSourceFilter}
-      showComposer={!terminalActive}
+      showComposer={!(terminalActive && turnInFlight)}
     />
-    {#if terminalActive}
+    {#if terminalActive && turnInFlight}
       <div class="tui-lock-bar">
         <span>
-          Terminal session is active — the conversation updates live here.
+          The terminal is finishing its turn — the conversation updates
+          live here, and chat unlocks the moment it's done.
         </span>
-        <button
-          type="button"
-          disabled={switching || turnInFlight}
-          title={turnInFlight
-            ? "Waiting for the CLI to finish its current turn"
-            : "Kill the CLI session and continue in chat"}
-          onclick={() => void endTerminalSession()}
-        >
-          End terminal session & chat
-        </button>
       </div>
     {/if}
   {/if}
@@ -616,23 +633,6 @@
     padding: 0.6em 1.4em 1em 1.4em;
     color: var(--text-muted);
     font-size: 0.9em;
-  }
-  .tui-lock-bar button {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 0.25em 0.7em;
-    border-radius: 6px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 0.9em;
-  }
-  .tui-lock-bar button:hover:not(:disabled) {
-    background: var(--hover-bg);
-  }
-  .tui-lock-bar button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .tui-exit-bar {
     display: flex;
