@@ -24,8 +24,18 @@
   ]);
 
   const status = $derived<RunStatus>(conversation.status as RunStatus);
+  // Same selection marker the session row has — the nested delegate row
+  // highlights while its page is the one being viewed.
+  const active = $derived(
+    page.url.pathname === `/conversations/${conversation.id}`,
+  );
   const isTerminal = $derived(TERMINAL_STATUSES.has(status));
-  const canDelete = $derived(isTerminal || conversation.archived);
+  // PENDING is deletable too: it's the parked state of a terminal agent
+  // that was created but never prompted (gui runs pass through PENDING
+  // for milliseconds only). RUNNING stays protected.
+  const canDelete = $derived(
+    isTerminal || status === "PENDING" || conversation.archived,
+  );
   const displayTitle = $derived(
     conversation.title?.trim() || "Untitled run",
   );
@@ -91,6 +101,7 @@
 
 <div
   class="row"
+  class:active
   role="button"
   tabindex="0"
   onclick={handleClick}
@@ -173,6 +184,9 @@
   }
   .row:hover {
     background: var(--hover-bg);
+  }
+  .row.active {
+    background: var(--active-bg, var(--hover-bg));
   }
   .row:focus-visible {
     outline: 2px solid var(--accent);

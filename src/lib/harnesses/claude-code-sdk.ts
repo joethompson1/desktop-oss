@@ -649,6 +649,10 @@ function buildRequest(
       tools: { type: "preset", preset: "claude_code" },
       permissionMode: "bypassPermissions",
       maxTurns: 50,
+      // Real cwd for the run. Load-bearing beyond tool resolution: Claude
+      // Code keys its on-disk session store by cwd, so the TUI surface can
+      // only resume this session if both drivers share the directory.
+      ...(params.workingDirectory ? { cwd: params.workingDirectory } : {}),
       ...(model ? { model } : {}),
       ...(params.resumeSessionId ? { resume: params.resumeSessionId } : {}),
     },

@@ -29,3 +29,4 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["process", "io-util", "rt"] }
 notify = "6"
 notify-debouncer-mini = "0.4"
+portable-pty = "0.9"

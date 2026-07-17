@@ -12,18 +12,34 @@
   import { harnesses } from "$lib/stores/harnesses.svelte";
   import { ChatStore } from "$lib/stores/chat-store.svelte";
   import ChatSurface from "$lib/components/chat/ChatSurface.svelte";
+  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
   import { harnessToSourceFamily } from "$lib/skills/harness-family";
   import type { HarnessType } from "$lib/types/harness";
+  import { updateRunSurface } from "$lib/db/runs";
+  import {
+    attachTui,
+    detachTui,
+    getTuiSession,
+    relaunchTui,
+    type TuiSession,
+  } from "$lib/agent/tui/driver";
+  import { harnessTypeSupportsTui } from "$lib/agent/tui/create";
 
   // One ChatStore per page mount — bound to this specific run. Same class
   // the orchestrator chat uses; only loadHistory + send differ.
   const runId = $derived(page.params.id ?? "");
 
-  const store = $derived(
-    new ChatStore({
+  // $derived.by with runId read DURING evaluation — this is what makes a
+  // same-route navigation (delegate page → other delegate page, component
+  // reused) produce a FRESH store. Reading runId only inside the callbacks
+  // would leave the derived dependency-free and the old store (hydrate is
+  // once-only) alive under the new URL.
+  const store = $derived.by(() => {
+    const currentRunId = runId;
+    return new ChatStore({
       loadHistory: async () => {
-        if (!runId) return [];
-        const chunks = await getRunChunks(runId);
+        if (!currentRunId) return [];
+        const chunks = await getRunChunks(currentRunId);
         return chunksToChatTurns(chunks);
       },
       send({ text, skillExpandedBody }) {
@@ -35,14 +51,20 @@
         const modelInputText = skillExpandedBody
           ? `${text}\n\n${skillExpandedBody}`
           : text;
-        return streamDelegateContinue({
-          runId,
-          userMessage: modelInputText,
-          resolveDelegateHarness: () => harnesses.resolveDelegate(),
-        });
+        // Implicit driver handoff: sending from chat takes ownership of
+        // the session (waits out a live CLI turn, then ends the terminal
+        // session). To the user it's just turn-based chat.
+        return (async function* () {
+          await handoffToChat(currentRunId);
+          yield* streamDelegateContinue({
+            runId: currentRunId,
+            userMessage: modelInputText,
+            resolveDelegateHarness: () => harnesses.resolveDelegate(),
+          });
+        })();
       },
-    }),
-  );
+    });
+  });
 
   // Reactive run-meta for the title row's status badge + duration.
   let run = $state<RunSummary | null>(null);
@@ -188,7 +210,197 @@
     };
   });
 
-  const statusLabel = $derived(run?.status.toLowerCase() ?? "");
+  // ─── Dual-surface (Plan 04): gui chat vs tui terminal ────────────────
+  // Two views of ONE harness session. `surface` records which DRIVER owns
+  // the session (persisted); `view` is what the user is looking at and is
+  // ALWAYS free to change — the single-driver rule gates driver handoffs,
+  // never sightseeing. The transcript mirror keeps run_chunks live during
+  // TUI turns, so the chat view renders read-only while the CLI works; a
+  // terminal request during a GUI turn queues and completes itself at the
+  // turn boundary instead of presenting a dead button.
+  const surface = $derived(run?.surface ?? "gui");
+  // v1 capability gate: only the claude-code harness has a TUI story
+  // (session pinning + hooks + on-disk transcript). Other harnesses never
+  // see the toggle — capability gates, not degraded modes.
+  const supportsTui = $derived(harnessTypeSupportsTui(run?.delegateType));
+  const turnInFlight = $derived(run?.status === "RUNNING");
+
+  let view = $state<"chat" | "terminal">("chat");
+  let viewInitialized = $state(false);
+  $effect(() => {
+    if (!run || run.id !== runId || viewInitialized) return;
+    viewInitialized = true;
+    view =
+      run.surface === "tui" && harnessTypeSupportsTui(run.delegateType)
+        ? "terminal"
+        : "chat";
+  });
+
+  let tuiSession = $state<TuiSession | null>(null);
+  let tuiExited = $state(false);
+  let tuiError = $state<string | null>(null);
+  let switching = $state(false);
+
+  // Same-route navigation (delegate page → other delegate page) REUSES
+  // this component, so every piece of per-run state must reset when the
+  // param changes — otherwise the previous run's meta/view/terminal bleed
+  // into the new one. (The store handles itself: see the $derived.by note.)
+  $effect(() => {
+    void runId;
+    run = null;
+    usage = null;
+    loadError = null;
+    viewInitialized = false;
+    tuiSession = null;
+    tuiExited = false;
+    tuiError = null;
+  });
+
+  // Queued driver switch: the user asked for the terminal while the GUI
+  // driver was mid-turn (or the run is still gui-owned). Re-runs when
+  // run.status changes, so it fires itself at the turn boundary.
+  $effect(() => {
+    if (
+      view !== "terminal" ||
+      !run ||
+      run.id !== runId ||
+      !supportsTui ||
+      surface === "tui" ||
+      turnInFlight ||
+      switching
+    ) {
+      return;
+    }
+    const currentRun = run;
+    void (async () => {
+      switching = true;
+      try {
+        await updateRunSurface(currentRun.id, "tui");
+        await refreshRun();
+      } catch (err) {
+        // Without a catch this effect would silently retry forever on a
+        // persistent write failure; surface it where the terminal view
+        // already shows errors.
+        tuiError =
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : "Failed to switch to the terminal";
+      } finally {
+        switching = false;
+      }
+    })();
+  });
+
+  // Attach (or re-attach after navigation) while the terminal is the
+  // active view and the TUI driver owns the session. The driver is
+  // idempotent per runId.
+  $effect(() => {
+    if (
+      !run ||
+      run.id !== runId ||
+      view !== "terminal" ||
+      surface !== "tui" ||
+      !supportsTui
+    )
+      return;
+    const currentRun = run;
+    let disposed = false;
+    let unsubscribe: (() => void) | null = null;
+    void (async () => {
+      try {
+        const session =
+          getTuiSession(currentRun.id) ?? (await attachTui(currentRun));
+        if (disposed) return;
+        tuiSession = session;
+        tuiExited = session.exited;
+        tuiError = null;
+        unsubscribe = session.onChange(() => {
+          tuiExited = session.exited;
+        });
+      } catch (err) {
+        if (!disposed) {
+          // Tauri command failures are plain strings — surface them
+          // verbatim; a generic message hides the actual cause.
+          tuiError =
+            err instanceof Error
+              ? err.message
+              : typeof err === "string"
+                ? err
+                : "Failed to start terminal";
+        }
+      }
+    })();
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  });
+
+  /** Silent handoff used by send(): the user's message takes ownership of
+   *  the session. If the agent is mid-turn on the terminal, wait for that
+   *  turn to finish first — to the user this is just turn-based chat (your
+   *  message goes next); no idle/busy vocabulary ever surfaces. Then end
+   *  the terminal session and hand the gui driver the session. No-op when
+   *  the run isn't tui-flagged. Takes the run id explicitly so it stays
+   *  correct even if the user navigates to another run mid-send. */
+  async function handoffToChat(rid: string): Promise<void> {
+    if (!rid) return;
+    for (;;) {
+      const fresh = await getRun(rid);
+      if (!fresh || (fresh.surface ?? "gui") !== "tui") return;
+      const live = getTuiSession(rid);
+      const cliBusy = fresh.status === "RUNNING" && live !== null && !live.exited;
+      if (!cliBusy) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await releaseTerminalToGui(rid);
+  }
+
+  /** Shared tail of every TUI→GUI handoff: kill/clean the session, flip
+   *  the persisted surface, refresh page state when it's ours. */
+  async function releaseTerminalToGui(rid: string): Promise<void> {
+    await detachTui(rid);
+    if (rid === runId) {
+      tuiSession = null;
+      tuiExited = false;
+    }
+    await updateRunSurface(rid, "gui");
+    if (rid === runId) await refreshRun();
+  }
+
+  // The real driver handoff TUI→GUI: kill the CLI session so the chat
+  // composer can drive again. Gated at turn boundaries — this is the
+  // destructive direction (a live CLI turn would be cancelled).
+  async function endTerminalSession() {
+    if (!run || switching || turnInFlight) return;
+    switching = true;
+    try {
+      await releaseTerminalToGui(run.id);
+      await store.refresh(); // pull in the chunks the mirror persisted
+      await refreshUsage();
+    } finally {
+      switching = false;
+    }
+  }
+
+  async function relaunch() {
+    if (!run) return;
+    tuiError = null;
+    try {
+      await relaunchTui(run.id);
+      tuiExited = getTuiSession(run.id)?.exited ?? false;
+    } catch (err) {
+      tuiError =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to relaunch terminal";
+    }
+  }
+
   const durationLabel = $derived.by(() => {
     if (!run?.completedAt || !run.createdAt) return null;
     const ms = Date.parse(run.completedAt) - Date.parse(run.createdAt);
@@ -224,7 +436,33 @@
       {#if usageChip}
         <span class="ctx" title={usageChip.title}>{usageChip.label}</span>
       {/if}
-      <span class="status" data-status={run.status}>{statusLabel}</span>
+      {#if supportsTui}
+        <div
+          class="mode-toggle"
+          role="group"
+          aria-label="Delegate view"
+          title="Switch between chat and terminal views of this session"
+        >
+          <button
+            type="button"
+            class="mode"
+            data-active={view === "chat"}
+            aria-pressed={view === "chat"}
+            onclick={() => (view = "chat")}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            class="mode"
+            data-active={view === "terminal"}
+            aria-pressed={view === "terminal"}
+            onclick={() => (view = "terminal")}
+          >
+            Terminal
+          </button>
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -232,12 +470,57 @@
     <div class="banner err">Couldn't load run: {loadError}</div>
   {/if}
 
-  <ChatSurface
-    {store}
-    allowAttachments={false}
-    composerPlaceholder={composerPlaceholder}
-    sourceFilter={skillSourceFilter}
-  />
+  {#if view === "terminal" && supportsTui && surface === "tui"}
+    {#if tuiError}
+      <div class="banner err">Terminal error: {tuiError}</div>
+    {/if}
+    {#if tuiSession}
+      <TerminalPane session={tuiSession} />
+      {#if tuiExited}
+        <div class="tui-exit-bar">
+          <span>The CLI session ended.</span>
+          <button type="button" onclick={() => void relaunch()}>
+            Relaunch
+          </button>
+          <button
+            type="button"
+            onclick={() => {
+              view = "chat";
+              void endTerminalSession();
+            }}
+          >
+            Continue in chat
+          </button>
+        </div>
+      {/if}
+    {:else if !tuiError}
+      <div class="banner">Starting terminal…</div>
+    {/if}
+  {:else}
+    <!-- ONE ChatSurface instance serves both the chat view and the
+         queued-switch (terminal-pending) view — remounting it mid-stream
+         loses scroll/streaming state for no benefit. The composer stays
+         available whenever the GUI driver owns the session, pending or
+         not: hiding it turned any wedged turn into a dead end. -->
+    {#if view === "terminal" && supportsTui}
+      <div class="tui-pending-bar">
+        <span>
+          {turnInFlight
+            ? "Finishing the current turn — the terminal will open as soon as it's done. Live output below."
+            : "Opening terminal…"}
+        </span>
+        <button type="button" onclick={() => (view = "chat")}>
+          Stay in chat
+        </button>
+      </div>
+    {/if}
+    <ChatSurface
+      {store}
+      allowAttachments={false}
+      composerPlaceholder={composerPlaceholder}
+      sourceFilter={skillSourceFilter}
+    />
+  {/if}
 </div>
 
 <style>
@@ -306,30 +589,73 @@
     font-variant-numeric: tabular-nums;
     cursor: default;
   }
-  .status {
+  .mode-toggle {
     flex: 0 0 auto;
-    font-size: 0.78em;
-    padding: 0.15em 0.6em;
-    border-radius: 999px;
-    background: var(--bg-elevated);
+    display: inline-flex;
     border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .mode {
+    background: none;
+    border: none;
     color: var(--text-muted);
-    text-transform: lowercase;
+    font-family: inherit;
+    font-size: 0.78em;
+    padding: 0.2em 0.75em;
+    cursor: pointer;
   }
-  .status[data-status="RUNNING"],
-  .status[data-status="PENDING"] {
-    color: var(--accent-text);
-    border-color: var(--accent);
+  .mode[data-active="true"] {
+    background: var(--bg-elevated);
+    color: var(--text);
   }
-  .status[data-status="SUCCEEDED"] {
-    color: var(--success);
-    border-color: var(--success);
+  .tui-pending-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    margin: 0 1.4em 0.6em 1.4em;
+    padding: 0.45em 0.8em;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 0.85em;
   }
-  .status[data-status="FAILED"],
-  .status[data-status="TIMED_OUT"],
-  .status[data-status="CANCELLED"] {
-    color: var(--danger-text);
-    border-color: var(--danger);
+  .tui-pending-bar span {
+    flex: 1 1 auto;
+  }
+  .tui-pending-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.2em 0.6em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95em;
+  }
+  .tui-pending-bar button:hover {
+    background: var(--hover-bg);
+  }
+  .tui-exit-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.8em;
+    padding: 0.6em 1.4em 1em 1.4em;
+    color: var(--text-muted);
+    font-size: 0.9em;
+  }
+  .tui-exit-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.25em 0.7em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+  }
+  .tui-exit-bar button:hover {
+    background: var(--hover-bg);
   }
   .banner {
     padding: 0.7em 1.4em;

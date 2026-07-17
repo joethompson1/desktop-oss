@@ -113,6 +113,25 @@ class ConversationsStore {
       : [...this.#expandedIds, id];
   }
 
+  /** Expand a session group if collapsed; no-op otherwise. Used by the
+   *  sidebar's route-follower so the group containing the page you're ON
+   *  stays open — the user can always see where they are and which
+   *  sibling agents belong to that session. */
+  ensureExpanded(id: string): void {
+    if (!this.#expandedIds.includes(id)) {
+      this.#expandedIds = [...this.#expandedIds, id];
+    }
+  }
+
+  /** Which session owns a delegate run, or null while runs are still
+   *  loading. Reactive — callers inside effects re-run when runs land. */
+  sessionIdForRun(runId: string): string | null {
+    for (const [cid, list] of Object.entries(this.#runs)) {
+      if (list.some((r) => r.id === runId)) return cid;
+    }
+    return null;
+  }
+
   async hydrate(): Promise<void> {
     if (this.#hydrated || this.#hydrating) return;
     this.#hydrating = true;
@@ -179,6 +198,16 @@ class ConversationsStore {
 
   /** Hard-delete a single delegate run (the nested row × action). */
   async deleteRun(runId: string): Promise<void> {
+    // A tui-surface run may have a live PTY (opened terminal, no prompt
+    // yet) or a registered xterm with scrollback — tear that down first
+    // so deletion never orphans a CLI process. Dynamic import keeps
+    // xterm out of the shell bundle; detachTui no-ops for unknown ids.
+    try {
+      const { detachTui } = await import("$lib/agent/tui/driver");
+      await detachTui(runId);
+    } catch {
+      // best-effort — a failed detach must not block deletion
+    }
     await dbDeleteRun(runId);
     const next: Record<string, RunSummary[]> = {};
     for (const [cid, list] of Object.entries(this.#runs)) {

@@ -1,8 +1,30 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import SidebarFooter from "./SidebarFooter.svelte";
   import SessionRow from "./SessionRow.svelte";
   import { conversations } from "$lib/stores/conversations.svelte";
+
+  // Route-follower: keep the session group you're INSIDE expanded, whether
+  // you're on the orchestrator chat (/sessions/:id) or one of its delegate
+  // pages (/conversations/:runId). Reading sessionIdForRun inside the
+  // effect makes it reactive to the runs map, so the expansion also fires
+  // once runs finish loading after a cold start.
+  $effect(() => {
+    const path = page.url.pathname;
+    const sessionMatch = path.match(/^\/sessions\/([^/]+)/);
+    if (sessionMatch && sessionMatch[1] !== "new") {
+      conversations.ensureExpanded(decodeURIComponent(sessionMatch[1]));
+      return;
+    }
+    const runMatch = path.match(/^\/conversations\/([^/]+)/);
+    if (runMatch) {
+      const sessionId = conversations.sessionIdForRun(
+        decodeURIComponent(runMatch[1]),
+      );
+      if (sessionId) conversations.ensureExpanded(sessionId);
+    }
+  });
 
   // "New session" and a group's "+" both open the same empty draft chat;
   // the conversation isn't created (or shown in the sidebar) until the
