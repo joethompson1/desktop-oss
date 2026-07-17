@@ -23,6 +23,7 @@
     relaunchTui,
     type TuiSession,
   } from "$lib/agent/tui/driver";
+  import { harnessTypeSupportsTui } from "$lib/agent/tui/create";
 
   // One ChatStore per page mount — bound to this specific run. Same class
   // the orchestrator chat uses; only loadHistory + send differ.
@@ -221,7 +222,7 @@
   // v1 capability gate: only the claude-code harness has a TUI story
   // (session pinning + hooks + on-disk transcript). Other harnesses never
   // see the toggle — capability gates, not degraded modes.
-  const supportsTui = $derived(run?.delegateType === "claude-code");
+  const supportsTui = $derived(harnessTypeSupportsTui(run?.delegateType));
   const turnInFlight = $derived(run?.status === "RUNNING");
 
   let view = $state<"chat" | "terminal">("chat");
@@ -229,9 +230,10 @@
   $effect(() => {
     if (!run || run.id !== runId || viewInitialized) return;
     viewInitialized = true;
-    view = run.surface === "tui" && run.delegateType === "claude-code"
-      ? "terminal"
-      : "chat";
+    view =
+      run.surface === "tui" && harnessTypeSupportsTui(run.delegateType)
+        ? "terminal"
+        : "chat";
   });
 
   let tuiSession = $state<TuiSession | null>(null);
@@ -275,6 +277,16 @@
       try {
         await updateRunSurface(currentRun.id, "tui");
         await refreshRun();
+      } catch (err) {
+        // Without a catch this effect would silently retry forever on a
+        // persistent write failure; surface it where the terminal view
+        // already shows errors.
+        tuiError =
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : "Failed to switch to the terminal";
       } finally {
         switching = false;
       }
@@ -343,6 +355,12 @@
       if (!cliBusy) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+    await releaseTerminalToGui(rid);
+  }
+
+  /** Shared tail of every TUI→GUI handoff: kill/clean the session, flip
+   *  the persisted surface, refresh page state when it's ours. */
+  async function releaseTerminalToGui(rid: string): Promise<void> {
     await detachTui(rid);
     if (rid === runId) {
       tuiSession = null;
@@ -359,11 +377,7 @@
     if (!run || switching || turnInFlight) return;
     switching = true;
     try {
-      await detachTui(run.id);
-      tuiSession = null;
-      tuiExited = false;
-      await updateRunSurface(run.id, "gui");
-      await refreshRun();
+      await releaseTerminalToGui(run.id);
       await store.refresh(); // pull in the chunks the mirror persisted
       await refreshUsage();
     } finally {
@@ -433,6 +447,7 @@
             type="button"
             class="mode"
             data-active={view === "chat"}
+            aria-pressed={view === "chat"}
             onclick={() => (view = "chat")}
           >
             Chat
@@ -441,6 +456,7 @@
             type="button"
             class="mode"
             data-active={view === "terminal"}
+            aria-pressed={view === "terminal"}
             onclick={() => (view = "terminal")}
           >
             Terminal
@@ -592,10 +608,6 @@
   .mode[data-active="true"] {
     background: var(--bg-elevated);
     color: var(--text);
-  }
-  .mode:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .tui-pending-bar {
     display: flex;

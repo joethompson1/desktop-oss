@@ -28,6 +28,7 @@ import {
   updateRunStatus,
 } from "$lib/db/runs";
 import { LineBuffer, parseTranscriptLine } from "./transcript";
+import { buildLaunchPlan } from "./launch-plan";
 import {
   buildHookSettings,
   fallbackTranscriptPath,
@@ -74,6 +75,9 @@ interface InternalSession extends TuiSession {
   hooksPath: string;
   turnInFlight: boolean;
   transcriptTailStarted: boolean;
+  /** Mirror-start rule for the CURRENT launch (see buildLaunchPlan):
+   *  fresh session → tail from 0; resume → tail from EOF. */
+  freshSession: boolean;
   suppressedToolIds: Set<string>;
   chunkQueue: Promise<void>;
   changeListeners: Set<() => void>;
@@ -191,6 +195,7 @@ async function doAttach(run: RunSummary): Promise<TuiSession> {
     hooksPath,
     turnInFlight: false,
     transcriptTailStarted: false,
+    freshSession: false,
     suppressedToolIds: new Set(),
     chunkQueue: Promise.resolve(),
     changeListeners: new Set(),
@@ -303,34 +308,31 @@ async function spawnPty(
 ): Promise<void> {
   const binary = await resolveClaudeBinary();
 
-  // First-ever launch of a TUI-spawned run hands the CLI the task brief
-  // as its opening prompt. Every other attach decides fresh-vs-resume by
-  // whether a conversation actually EXISTS on disk — a pinned session id
-  // is not enough: `claude --resume` refuses a session with no recorded
-  // turns (e.g. the user opened a terminal, typed nothing, switched away
-  // and back). When there is nothing to resume, mint a FRESH session id —
-  // relaunching `--session-id` over an existing (empty-but-created)
-  // session errors with "already in use". (`--resume` forks a new session
-  // id — the SessionStart hook follows the fork and re-points the mirror.)
+  // Fresh-vs-resume (and the mirror-start rule that follows from it) is
+  // decided by the pure, unit-tested buildLaunchPlan — see its header for
+  // why a pinned session id is NOT evidence of something to resume, and
+  // why fresh launches must mirror from offset 0 while resumes mirror
+  // from EOF. Each (re)launch resets the per-launch tail bookkeeping so
+  // the SessionStart-hook fallback re-arms for THIS child.
   const initialPrompt = run?.tuiInitialPrompt;
-  let args: string[];
-  if (initialPrompt) {
-    args = [
-      "--session-id",
-      session.sessionId,
-      "--settings",
-      session.hooksPath,
-      initialPrompt,
-    ];
-  } else if (await transcriptHasConversation(session)) {
-    args = ["--resume", session.sessionId, "--settings", session.hooksPath];
-  } else {
-    session.sessionId = crypto.randomUUID();
-    await updateHarnessSessionId(session.runId, session.sessionId).catch(
+  const plan = buildLaunchPlan({
+    sessionId: session.sessionId,
+    hooksPath: session.hooksPath,
+    initialPrompt,
+    hasConversation: initialPrompt
+      ? false
+      : await transcriptHasConversation(session),
+    mintSessionId: () => crypto.randomUUID(),
+  });
+  if (plan.sessionId !== session.sessionId) {
+    session.sessionId = plan.sessionId;
+    await updateHarnessSessionId(session.runId, plan.sessionId).catch(
       () => {},
     );
-    args = ["--session-id", session.sessionId, "--settings", session.hooksPath];
   }
+  session.freshSession = plan.freshSession;
+  session.transcriptTailStarted = false;
+  const args = plan.args;
 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (evt) => {
@@ -495,15 +497,19 @@ async function startTranscriptTail(
       }
     }
   };
-  // From EOF: everything already in the file was either persisted by the
-  // GUI driver (this run's prior turns) or is fork-seeded history — only
-  // NEW entries belong to this live TUI session. Re-starting with the
-  // same watchId atomically replaces a previous transcript tail (fork
-  // follow-up), per the Rust side's insert-replaces semantics.
+  // Resume: from EOF — everything already in the file was persisted by a
+  // prior driver or is fork-seeded history. Fresh session: from 0 — the
+  // file is brand-new and its earliest entries (e.g. an auto-submitted
+  // task brief) exist nowhere else; EOF here raced the CLI's first write
+  // and could drop the run's first turn (PR #25 review blocker). The
+  // parser ignores meta lines, so from-0 over a new file is safe.
+  // Re-starting with the same watchId atomically replaces a previous
+  // transcript tail (fork follow-up), per the Rust insert-replaces
+  // semantics.
   await invoke("tail_file", {
     watchId: transcriptWatchId(session.runId),
     path,
-    fromOffset: -1,
+    fromOffset: session.freshSession ? 0 : -1,
     onEvent: channel,
   });
 }

@@ -173,6 +173,9 @@ test("hook settings wire every relay event to the relay file", () => {
     assert.match(cmd, /cat >> "\/tmp\/relay dir\/relay\.jsonl"/);
   }
   assert.throws(() => buildHookSettings('/bad/"quoted"/relay.jsonl'));
+  assert.throws(() => buildHookSettings("/bad/$HOME/relay.jsonl"));
+  assert.throws(() => buildHookSettings("/bad/`cmd`/relay.jsonl"));
+  assert.throws(() => buildHookSettings("/bad/back\\slash/relay.jsonl"));
 });
 
 test("project path munge replaces every non-alphanumeric with dash", () => {

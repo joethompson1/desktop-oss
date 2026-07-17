@@ -24,7 +24,10 @@
     DEFAULT_DELEGATE_PROMPT,
   } from "$lib/agent/prompts";
   import { getSetting, setSetting } from "$lib/db/settings";
-  import { DEFAULT_SURFACE_SETTING_KEY } from "$lib/agent/tui/create";
+  import {
+    DEFAULT_SURFACE_SETTING_KEY,
+    harnessTypeSupportsTui,
+  } from "$lib/agent/tui/create";
   import {
     skills as skillsStore,
     refresh as refreshSkills,
@@ -340,7 +343,7 @@
   let defaultSurface = $state<"gui" | "tui">("gui");
   let defaultSurfaceLoaded = $state(false);
   const anyTuiCapable = $derived(
-    harnesses.configs.some((c) => c.type === "claude-code"),
+    harnesses.configs.some((c) => harnessTypeSupportsTui(c.type)),
   );
 
   $effect(() => {

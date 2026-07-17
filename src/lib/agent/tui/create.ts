@@ -33,11 +33,17 @@ export interface CreateTuiRunInput {
   runId?: string;
 }
 
-/** Harnesses with a TUI story (session pinning + hooks + on-disk
+/** Harness TYPES with a TUI story (session pinning + hooks + on-disk
  *  transcript). v1: Claude Code only — a clean capability gate, per the
- *  uniformity principle: harnesses either have the surface or don't. */
+ *  uniformity principle: harnesses either have the surface or don't.
+ *  Single source of truth: every "supports a terminal?" check anywhere in
+ *  the app goes through these two helpers, never a string literal. */
+export function harnessTypeSupportsTui(type: string | undefined): boolean {
+  return type === "claude-code";
+}
+
 export function harnessSupportsTui(harness: LLMHarness): boolean {
-  return harness.type === "claude-code";
+  return harnessTypeSupportsTui(harness.type);
 }
 
 /**

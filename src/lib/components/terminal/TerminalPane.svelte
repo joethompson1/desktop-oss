@@ -40,8 +40,9 @@
     border-radius: 10px;
     border: 1px solid var(--border);
     /* xterm's default theme is dark; keep the frame dark in both app
-       themes so the terminal reads as one coherent surface. */
-    background: #000;
+       themes so the terminal reads as one coherent surface. Themable via
+       --terminal-bg for anyone who restyles xterm too. */
+    background: var(--terminal-bg, #000);
     overflow: hidden;
   }
   .terminal :global(.xterm),

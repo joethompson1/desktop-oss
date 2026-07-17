@@ -20,13 +20,16 @@ export const RELAY_HOOK_EVENTS = [
 
 /**
  * Build the JSON for the `--settings` layer that wires every relay hook.
- * `relayPath` is embedded in a shell command — quote-guarded, but paths
- * containing double quotes are rejected rather than escaped (they never
- * occur under our app-data root and the quoting rules differ per shell).
+ * `relayPath` is embedded inside a DOUBLE-quoted region of a shell
+ * command, where `$`, backtick, and backslash still expand — so every
+ * shell-active character is rejected rather than escaped (they never
+ * occur under our app-data root, and escaping rules differ per shell).
  */
 export function buildHookSettings(relayPath: string): string {
-  if (relayPath.includes('"')) {
-    throw new Error(`relay path must not contain double quotes: ${relayPath}`);
+  if (/["$`\\]/.test(relayPath)) {
+    throw new Error(
+      `relay path must not contain shell-active characters (" $ \` \\): ${relayPath}`,
+    );
   }
   const command = `sh -c 'cat >> "${relayPath}"; printf "\\n" >> "${relayPath}"'`;
   const hookEntry = [{ hooks: [{ type: "command", command }] }];
