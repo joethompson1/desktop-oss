@@ -54,6 +54,12 @@
         });
         handle = local;
         await local.store.hydrate();
+        if (disposed) return;
+        // Reconcile any delegate runs that finished while this session was
+        // unmounted (user was on the delegate's page, or the app restarted).
+        // Runs AFTER hydrate so the notification bubble lands below restored
+        // history instead of being wiped by the history load.
+        void local.notifyBackgroundCompletions();
       } catch (err) {
         if (!disposed) {
           loadError =

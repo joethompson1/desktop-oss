@@ -24,6 +24,7 @@ interface RunRecord {
   surface: string | null;
   workdir: string | null;
   tui_initial_prompt: string | null;
+  completion_notified: number;
   files_changed_json: string | null;
   created_at: number;
   completed_at: number | null;
@@ -242,6 +243,7 @@ function recordToSummary(r: RunRecord): RunSummary {
     surface: (r.surface as RunSurface | null) ?? undefined,
     workdir: r.workdir ?? undefined,
     tuiInitialPrompt: r.tui_initial_prompt ?? undefined,
+    completionNotified: r.completion_notified === 1,
     filesChanged: r.files_changed_json
       ? (JSON.parse(r.files_changed_json) as string[])
       : undefined,
@@ -381,4 +383,61 @@ export async function markStaleRunsAbandoned(): Promise<number> {
     [now],
   );
   return result.rowsAffected ?? 0;
+}
+
+/**
+ * Every run in a conversation the orchestrator has NOT yet been told about
+ * (`completion_notified = 0`), oldest first. Deliberately unfiltered by
+ * status: the caller (the hydrate sweep) applies the terminal-state and
+ * surface policy in a pure, unit-tested predicate (`shouldSweepNotify`) so
+ * that logic isn't duplicated in SQL. Oldest-first so the batched
+ * notification lists completions in the order they happened.
+ */
+export async function listUnnotifiedRuns(
+  conversationId: string,
+): Promise<RunSummary[]> {
+  const db = await getDb();
+  const rows = await db.select<RunRecord[]>(
+    `SELECT * FROM runs
+     WHERE conversation_id = $1 AND completion_notified = 0
+     ORDER BY created_at ASC`,
+    [conversationId],
+  );
+  return rows.map(recordToSummary);
+}
+
+/**
+ * Atomically claim a set of runs for completion notification: flip
+ * `completion_notified` 0 → 1 for the given ids and return the subset that
+ * were still 0 (i.e. this call actually claimed). Callers notify ONLY the
+ * returned ids, so the persisted flag is the single source of truth for
+ * "has the orchestrator been told?" — the live run-events bus and the
+ * hydrate sweep can both call this without coordinating and never
+ * double-notify. Runs that were already notified fall out of the result.
+ *
+ * Two statements (SELECT the still-unnotified ids, then UPDATE them) rather
+ * than UPDATE … RETURNING: plugin-sql's `execute` doesn't surface RETURNING
+ * rows. The orchestrator chat store serializes its sweeps (see
+ * `chat.svelte.ts`), so the SELECT/UPDATE pair can't interleave with another
+ * claim for the same conversation.
+ */
+export async function claimRunsForNotification(
+  runIds: string[],
+): Promise<string[]> {
+  if (runIds.length === 0) return [];
+  const db = await getDb();
+  const placeholders = runIds.map((_, i) => `$${i + 1}`).join(",");
+  const rows = await db.select<{ id: string }[]>(
+    `SELECT id FROM runs
+     WHERE id IN (${placeholders}) AND completion_notified = 0`,
+    runIds,
+  );
+  const claimed = rows.map((r) => r.id);
+  if (claimed.length === 0) return [];
+  const claimPlaceholders = claimed.map((_, i) => `$${i + 1}`).join(",");
+  await db.execute(
+    `UPDATE runs SET completion_notified = 1 WHERE id IN (${claimPlaceholders})`,
+    claimed,
+  );
+  return claimed;
 }

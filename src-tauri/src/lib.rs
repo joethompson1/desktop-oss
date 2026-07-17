@@ -1197,6 +1197,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0007_dual_surface.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "completion notified flag",
+            sql: include_str!("../migrations/0008_completion_notified.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

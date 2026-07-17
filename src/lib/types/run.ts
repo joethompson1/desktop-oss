@@ -90,6 +90,10 @@ export interface RunSummary {
   /** For TUI-spawned runs: the task brief to hand the CLI as its first
    *  prompt when the user first opens the terminal. Cleared once used. */
   tuiInitialPrompt?: string;
+  /** Whether the orchestrator has already been told this run finished. Set
+   *  when a completion notification is enqueued (live bus or hydrate sweep);
+   *  the persisted guard against double-notifying. Absent = false. */
+  completionNotified?: boolean;
   filesChanged?: string[];
   createdAt: string;
   completedAt?: string;
