@@ -9,7 +9,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 mod skills;
 use skills::{list_skill_files, run_skill_shell, watch_skill_dirs};
 mod tui;
-use tui::{pty_alive, pty_kill, pty_resize, pty_spawn, pty_write, tail_file, tail_stop};
+use tui::{file_size, pty_alive, pty_kill, pty_resize, pty_spawn, pty_write, tail_file, tail_stop};
 
 const MAX_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
 
@@ -1233,6 +1233,7 @@ pub fn run() {
             pty_alive,
             tail_file,
             tail_stop,
+            file_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

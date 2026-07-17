@@ -304,22 +304,33 @@ async function spawnPty(
   const binary = await resolveClaudeBinary();
 
   // First-ever launch of a TUI-spawned run hands the CLI the task brief
-  // as its opening prompt; every other path resumes the shared session.
-  // (`--resume` forks a new session id — the SessionStart hook follows
-  // the fork and re-points the transcript mirror.)
+  // as its opening prompt. Every other attach decides fresh-vs-resume by
+  // whether a conversation actually EXISTS on disk — a pinned session id
+  // is not enough: `claude --resume` refuses a session with no recorded
+  // turns (e.g. the user opened a terminal, typed nothing, switched away
+  // and back). When there is nothing to resume, mint a FRESH session id —
+  // relaunching `--session-id` over an existing (empty-but-created)
+  // session errors with "already in use". (`--resume` forks a new session
+  // id — the SessionStart hook follows the fork and re-points the mirror.)
   const initialPrompt = run?.tuiInitialPrompt;
-  const hasHistory = !initialPrompt && run?.harnessSessionId;
-  const args = initialPrompt
-    ? [
-        "--session-id",
-        session.sessionId,
-        "--settings",
-        session.hooksPath,
-        initialPrompt,
-      ]
-    : hasHistory || !run
-      ? ["--resume", session.sessionId, "--settings", session.hooksPath]
-      : ["--session-id", session.sessionId, "--settings", session.hooksPath];
+  let args: string[];
+  if (initialPrompt) {
+    args = [
+      "--session-id",
+      session.sessionId,
+      "--settings",
+      session.hooksPath,
+      initialPrompt,
+    ];
+  } else if (await transcriptHasConversation(session)) {
+    args = ["--resume", session.sessionId, "--settings", session.hooksPath];
+  } else {
+    session.sessionId = crypto.randomUUID();
+    await updateHarnessSessionId(session.runId, session.sessionId).catch(
+      () => {},
+    );
+    args = ["--session-id", session.sessionId, "--settings", session.hooksPath];
+  }
 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (evt) => {
@@ -378,6 +389,30 @@ async function spawnPty(
       );
     }
   }, 8000);
+}
+
+/**
+ * Does the session's on-disk transcript contain an actual conversation?
+ * Checks the deterministic path (cwd-munge + session id). Conservative:
+ * any failure reads as "no" — the fresh-launch fallback always produces a
+ * working terminal, while a wrong `--resume` produces a dead one.
+ */
+async function transcriptHasConversation(
+  session: InternalSession,
+): Promise<boolean> {
+  try {
+    const path = fallbackTranscriptPath(
+      session.home,
+      session.cwd,
+      session.sessionId,
+    );
+    const size = await invoke<number | null>("file_size", { path });
+    if (!size) return false;
+    const content = await invoke<string>("read_text_file", { path });
+    return content.includes('"type":"user"') || content.includes('"type":"assistant"');
+  } catch {
+    return false;
+  }
 }
 
 async function startRelayTail(session: InternalSession): Promise<void> {

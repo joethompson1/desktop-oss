@@ -368,6 +368,15 @@ pub fn tail_file(
     Ok(())
 }
 
+/// Size of a file in bytes, or null when it doesn't exist. The TUI
+/// driver uses this on the (deterministic) transcript path to decide
+/// fresh-vs-resume: `claude --resume` refuses a session with no recorded
+/// conversation, so "a session id exists" is not evidence enough.
+#[tauri::command]
+pub fn file_size(path: String) -> Option<u64> {
+    std::fs::metadata(&path).ok().map(|m| m.len())
+}
+
 /// Stop a running `tail_file` watcher. Unknown ids are a no-op.
 #[tauri::command]
 pub fn tail_stop(watch_id: String) -> Result<(), String> {
