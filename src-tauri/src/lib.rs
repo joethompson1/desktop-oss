@@ -322,6 +322,10 @@ fn parse_credentials_blob(raw: &str) -> Option<ClaudeCodeAccountInfo> {
     let access_token = oauth
         .get("accessToken")
         .and_then(|v| v.as_str())
+        // Logout leaves a stub item with EMPTY-STRING tokens (observed with
+        // the native 2.1.x CLI) — treat blank the same as absent so the app
+        // reports "not logged in" instead of a phantom account.
+        .filter(|t| !t.trim().is_empty())
         .map(String::from);
     if access_token.is_none() {
         return None;
