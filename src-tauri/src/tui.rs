@@ -118,10 +118,12 @@ pub fn pty_spawn(
         }
     }
 
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("pty spawn failed: {e}"))?;
+    eprintln!("[pty:{session_id}] spawning: {command} {args:?} (cwd={cwd:?})");
+    let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
+        let msg = format!("pty spawn failed for '{command}': {e}");
+        eprintln!("[pty:{session_id}] {msg}");
+        msg
+    })?;
     // Close our copy of the slave so the reader sees EOF when the child
     // exits instead of blocking forever.
     drop(pair.slave);

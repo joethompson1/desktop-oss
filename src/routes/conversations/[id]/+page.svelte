@@ -233,8 +233,14 @@
         });
       } catch (err) {
         if (!disposed) {
+          // Tauri command failures are plain strings — surface them
+          // verbatim; a generic message hides the actual cause.
           tuiError =
-            err instanceof Error ? err.message : "Failed to start terminal";
+            err instanceof Error
+              ? err.message
+              : typeof err === "string"
+                ? err
+                : "Failed to start terminal";
         }
       }
     })();
@@ -279,7 +285,11 @@
       tuiExited = getTuiSession(run.id)?.exited ?? false;
     } catch (err) {
       tuiError =
-        err instanceof Error ? err.message : "Failed to relaunch terminal";
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : "Failed to relaunch terminal";
     }
   }
 

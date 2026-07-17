@@ -83,6 +83,29 @@ interface InternalSession extends TuiSession {
 
 const sessions = new Map<string, InternalSession>();
 
+/** Tauri command failures reject with plain STRINGS (the Rust `Err`
+ *  value), not Error instances — stringify faithfully so real causes
+ *  reach the UI instead of a generic fallback. */
+function errText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+/** Label each attach step so a failure says WHAT failed ("spawn PTY:
+ *  pty_spawn not found" pinpoints a stale Rust build immediately). */
+async function step<T>(label: string, work: Promise<T>): Promise<T> {
+  try {
+    return await work;
+  } catch (err) {
+    throw new Error(`${label}: ${errText(err)}`);
+  }
+}
+
 export function getTuiSession(runId: string): TuiSession | null {
   return sessions.get(runId) ?? null;
 }
@@ -97,7 +120,10 @@ export async function attachTui(run: RunSummary): Promise<TuiSession> {
   const existing = sessions.get(run.id);
   if (existing) return existing;
 
-  const home = await invoke<string | null>("home_dir");
+  const home = await step(
+    "resolve home directory",
+    invoke<string | null>("home_dir"),
+  );
   if (!home) throw new Error("Could not resolve the home directory.");
   const cwd = run.workdir ?? home;
 
@@ -115,11 +141,17 @@ export async function attachTui(run: RunSummary): Promise<TuiSession> {
   const hooksPath = `${dir}/hooks.json`;
   // Truncate the relay per attach — its events are only meaningful for
   // the live session; history already landed in run_chunks.
-  await invoke("write_text_file", { path: relayPath, contents: "" });
-  await invoke("write_text_file", {
-    path: hooksPath,
-    contents: buildHookSettings(relayPath),
-  });
+  await step(
+    "write hook relay files",
+    invoke("write_text_file", { path: relayPath, contents: "" }),
+  );
+  await step(
+    "write hook settings",
+    invoke("write_text_file", {
+      path: hooksPath,
+      contents: buildHookSettings(relayPath),
+    }),
+  );
 
   const term = new Terminal({
     // Concrete font stack — xterm measures glyphs via canvas, which can't
@@ -296,16 +328,19 @@ async function spawnPty(
     }
   };
 
-  await invoke("pty_spawn", {
-    sessionId: ptyId(session.runId),
-    command: binary,
-    args,
-    cwd: session.cwd,
-    env: null,
-    cols: session.term.cols,
-    rows: session.term.rows,
-    onEvent: channel,
-  });
+  await step(
+    `spawn PTY (${binary})`,
+    invoke("pty_spawn", {
+      sessionId: ptyId(session.runId),
+      command: binary,
+      args,
+      cwd: session.cwd,
+      env: null,
+      cols: session.term.cols,
+      rows: session.term.rows,
+      onEvent: channel,
+    }),
+  );
 
   session.disposeTermData?.dispose();
   session.disposeTermData = session.term.onData((data) => {
@@ -345,12 +380,15 @@ async function startRelayTail(session: InternalSession): Promise<void> {
       handleRelayEvent(session, relay);
     }
   };
-  await invoke("tail_file", {
-    watchId: relayWatchId(session.runId),
-    path: session.relayPath,
-    fromOffset: 0,
-    onEvent: channel,
-  });
+  await step(
+    "start hook relay tail",
+    invoke("tail_file", {
+      watchId: relayWatchId(session.runId),
+      path: session.relayPath,
+      fromOffset: 0,
+      onEvent: channel,
+    }),
+  );
 }
 
 function handleRelayEvent(
