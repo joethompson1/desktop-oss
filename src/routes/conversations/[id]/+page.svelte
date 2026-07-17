@@ -292,6 +292,33 @@
     };
   });
 
+  // Keep the page honest about LIVENESS, independent of which view is
+  // showing: the persisted `surface` says who OWNS the session; the
+  // driver registry says whether a CLI is actually ALIVE. The chat
+  // view's composer/lock-bar key off liveness — a dead or never-started
+  // terminal session must not lock the composer behind a lie.
+  $effect(() => {
+    if (!run || surface !== "tui") return;
+    void view; // re-sync when the user flips views
+    const existing = getTuiSession(run.id);
+    if (!existing) {
+      tuiSession = null;
+      tuiExited = false;
+      return;
+    }
+    tuiSession = existing;
+    tuiExited = existing.exited;
+    return existing.onChange(() => {
+      tuiExited = existing.exited;
+    });
+  });
+
+  /** A live CLI currently owns the session (spawned and not exited).
+   *  This — not the persisted surface flag — gates the chat composer. */
+  const terminalActive = $derived(
+    surface === "tui" && tuiSession !== null && !tuiExited,
+  );
+
   // The real driver handoff TUI→GUI: kill the CLI session so the chat
   // composer can drive again. Gated at turn boundaries — this is the
   // destructive direction (a live CLI turn would be cancelled).
@@ -327,7 +354,6 @@
     }
   }
 
-  const statusLabel = $derived(run?.status.toLowerCase() ?? "");
   const durationLabel = $derived.by(() => {
     if (!run?.completedAt || !run.createdAt) return null;
     const ms = Date.parse(run.completedAt) - Date.parse(run.createdAt);
@@ -388,7 +414,6 @@
           </button>
         </div>
       {/if}
-      <span class="status" data-status={run.status}>{statusLabel}</span>
     {/if}
   </div>
 
@@ -445,9 +470,9 @@
       allowAttachments={false}
       composerPlaceholder={composerPlaceholder}
       sourceFilter={skillSourceFilter}
-      showComposer={surface !== "tui"}
+      showComposer={!terminalActive}
     />
-    {#if surface === "tui"}
+    {#if terminalActive}
       <div class="tui-lock-bar">
         <span>
           Terminal session is active — the conversation updates live here.
@@ -629,31 +654,6 @@
   }
   .tui-exit-bar button:hover {
     background: var(--hover-bg);
-  }
-  .status {
-    flex: 0 0 auto;
-    font-size: 0.78em;
-    padding: 0.15em 0.6em;
-    border-radius: 999px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    text-transform: lowercase;
-  }
-  .status[data-status="RUNNING"],
-  .status[data-status="PENDING"] {
-    color: var(--accent-text);
-    border-color: var(--accent);
-  }
-  .status[data-status="SUCCEEDED"] {
-    color: var(--success);
-    border-color: var(--success);
-  }
-  .status[data-status="FAILED"],
-  .status[data-status="TIMED_OUT"],
-  .status[data-status="CANCELLED"] {
-    color: var(--danger-text);
-    border-color: var(--danger);
   }
   .banner {
     padding: 0.7em 1.4em;
