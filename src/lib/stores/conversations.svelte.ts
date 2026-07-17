@@ -179,6 +179,16 @@ class ConversationsStore {
 
   /** Hard-delete a single delegate run (the nested row × action). */
   async deleteRun(runId: string): Promise<void> {
+    // A tui-surface run may have a live PTY (opened terminal, no prompt
+    // yet) or a registered xterm with scrollback — tear that down first
+    // so deletion never orphans a CLI process. Dynamic import keeps
+    // xterm out of the shell bundle; detachTui no-ops for unknown ids.
+    try {
+      const { detachTui } = await import("$lib/agent/tui/driver");
+      await detachTui(runId);
+    } catch {
+      // best-effort — a failed detach must not block deletion
+    }
     await dbDeleteRun(runId);
     const next: Record<string, RunSummary[]> = {};
     for (const [cid, list] of Object.entries(this.#runs)) {

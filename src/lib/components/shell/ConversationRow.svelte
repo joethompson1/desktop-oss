@@ -25,7 +25,12 @@
 
   const status = $derived<RunStatus>(conversation.status as RunStatus);
   const isTerminal = $derived(TERMINAL_STATUSES.has(status));
-  const canDelete = $derived(isTerminal || conversation.archived);
+  // PENDING is deletable too: it's the parked state of a terminal agent
+  // that was created but never prompted (gui runs pass through PENDING
+  // for milliseconds only). RUNNING stays protected.
+  const canDelete = $derived(
+    isTerminal || status === "PENDING" || conversation.archived,
+  );
   const displayTitle = $derived(
     conversation.title?.trim() || "Untitled run",
   );
