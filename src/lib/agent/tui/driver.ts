@@ -82,6 +82,11 @@ interface InternalSession extends TuiSession {
 }
 
 const sessions = new Map<string, InternalSession>();
+// In-flight attach dedup: two near-simultaneous attach calls (the page
+// effect re-running on a reactive `run` refresh) must share ONE attempt —
+// the loser of the old check-then-await race would otherwise spawn a
+// second PTY over the same id and tear down the winner's registration.
+const attaching = new Map<string, Promise<TuiSession>>();
 
 /** Tauri command failures reject with plain STRINGS (the Rust `Err`
  *  value), not Error instances — stringify faithfully so real causes
@@ -119,6 +124,14 @@ export function getTuiSession(runId: string): TuiSession | null {
 export async function attachTui(run: RunSummary): Promise<TuiSession> {
   const existing = sessions.get(run.id);
   if (existing) return existing;
+  const inFlight = attaching.get(run.id);
+  if (inFlight) return inFlight;
+  const attempt = doAttach(run).finally(() => attaching.delete(run.id));
+  attaching.set(run.id, attempt);
+  return attempt;
+}
+
+async function doAttach(run: RunSummary): Promise<TuiSession> {
 
   const home = await step(
     "resolve home directory",

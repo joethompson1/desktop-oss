@@ -17,7 +17,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::ipc::Channel;
 
@@ -25,6 +25,16 @@ struct PtySession {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
+    /// Monotonic spawn generation. A respawn REPLACES the registry entry
+    /// (see pty_spawn); the old child's waiter thread must only remove
+    /// the entry if it still belongs to ITS generation, or it would
+    /// delete the replacement's registration.
+    generation: u64,
+}
+
+fn next_generation() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 fn pty_sessions() -> &'static Mutex<HashMap<String, PtySession>> {
@@ -86,10 +96,17 @@ pub fn pty_spawn(
     rows: u16,
     on_event: Channel<PtyEvent>,
 ) -> Result<(), String> {
+    // Replace semantics: spawning over a live id kills the previous child
+    // and takes its slot. This is load-bearing for dev HMR — a hot module
+    // swap wipes the webview's session registry while the Rust-side PTY
+    // lives on; the re-attach must be able to reclaim the id instead of
+    // erroring. The orphan's waiter thread skips cleanup via `generation`.
     {
-        let sessions = pty_sessions().lock().map_err(|e| e.to_string())?;
-        if sessions.contains_key(&session_id) {
-            return Err(format!("pty session '{session_id}' already exists"));
+        let mut sessions = pty_sessions().lock().map_err(|e| e.to_string())?;
+        if let Some(previous) = sessions.get_mut(&session_id) {
+            eprintln!("[pty:{session_id}] replacing live session (gen {})", previous.generation);
+            let _ = previous.killer.kill();
+            sessions.remove(&session_id);
         }
     }
 
@@ -141,6 +158,7 @@ pub fn pty_spawn(
     let pid = child.process_id().unwrap_or(0);
     let _ = on_event.send(PtyEvent::Spawned { pid });
 
+    let generation = next_generation();
     {
         let mut sessions = pty_sessions().lock().map_err(|e| e.to_string())?;
         sessions.insert(
@@ -149,6 +167,7 @@ pub fn pty_spawn(
                 master: pair.master,
                 writer,
                 killer,
+                generation,
             },
         );
     }
@@ -183,9 +202,16 @@ pub fn pty_spawn(
     std::thread::spawn(move || {
         let code = child.wait().ok().map(|status| status.exit_code());
         if let Ok(mut sessions) = pty_sessions().lock() {
-            sessions.remove(&exit_session);
+            // Only clean up OUR registration — if a respawn replaced this
+            // entry, the map now belongs to the new generation.
+            if sessions
+                .get(&exit_session)
+                .is_some_and(|s| s.generation == generation)
+            {
+                sessions.remove(&exit_session);
+            }
         }
-        eprintln!("[pty:{exit_session}] exited code={code:?}");
+        eprintln!("[pty:{exit_session}] exited code={code:?} (gen {generation})");
         let _ = exit_channel.send(PtyEvent::Exit { code });
     });
 
