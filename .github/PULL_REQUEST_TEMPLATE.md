@@ -1,7 +1,8 @@
-<!-- Title: imperative one-liner of the change,
-     e.g. "Delegate kinds + orchestrator-authored per-spawn personas (Plan 02)" -->
+## Title: 
 
-Closes #
+_imperative one-liner of the change,
+e.g. "Delegate kinds + orchestrator-authored per-spawn personas (Plan 02)"_
+
 
 ## What & why
 
