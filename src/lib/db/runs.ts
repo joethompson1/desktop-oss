@@ -408,36 +408,33 @@ export async function listUnnotifiedRuns(
 
 /**
  * Atomically claim a set of runs for completion notification: flip
- * `completion_notified` 0 → 1 for the given ids and return the subset that
- * were still 0 (i.e. this call actually claimed). Callers notify ONLY the
- * returned ids, so the persisted flag is the single source of truth for
- * "has the orchestrator been told?" — the live run-events bus and the
- * hydrate sweep can both call this without coordinating and never
- * double-notify. Runs that were already notified fall out of the result.
+ * `completion_notified` 0 → 1 for the given ids and return the subset this
+ * call actually claimed. Callers notify ONLY the returned ids, so the
+ * persisted flag is the single source of truth for "has the orchestrator
+ * been told?" — the live run-events bus and the hydrate sweep can both call
+ * this without coordinating and never double-notify.
  *
- * Two statements (SELECT the still-unnotified ids, then UPDATE them) rather
- * than UPDATE … RETURNING: plugin-sql's `execute` doesn't surface RETURNING
- * rows. The orchestrator chat store serializes its sweeps (see
- * `chat.svelte.ts`), so the SELECT/UPDATE pair can't interleave with another
- * claim for the same conversation.
+ * One conditional UPDATE per id, each checked via rowsAffected: a claim is
+ * then atomic PER RUN at the SQLite level, so exactly-once holds even across
+ * two concurrent claimers for the same conversation (e.g. a store from a
+ * rapid remount racing its predecessor's in-flight sweep) — a window a
+ * SELECT-then-UPDATE pair would leave open. Per-store sweep serialization in
+ * `chat.svelte.ts` remains, but correctness no longer depends on it. The ids
+ * list is small (un-notified completions), so N tiny statements are cheap.
  */
 export async function claimRunsForNotification(
   runIds: string[],
 ): Promise<string[]> {
   if (runIds.length === 0) return [];
   const db = await getDb();
-  const placeholders = runIds.map((_, i) => `$${i + 1}`).join(",");
-  const rows = await db.select<{ id: string }[]>(
-    `SELECT id FROM runs
-     WHERE id IN (${placeholders}) AND completion_notified = 0`,
-    runIds,
-  );
-  const claimed = rows.map((r) => r.id);
-  if (claimed.length === 0) return [];
-  const claimPlaceholders = claimed.map((_, i) => `$${i + 1}`).join(",");
-  await db.execute(
-    `UPDATE runs SET completion_notified = 1 WHERE id IN (${claimPlaceholders})`,
-    claimed,
-  );
+  const claimed: string[] = [];
+  for (const id of runIds) {
+    const result = await db.execute(
+      `UPDATE runs SET completion_notified = 1
+       WHERE id = $1 AND completion_notified = 0`,
+      [id],
+    );
+    if ((result.rowsAffected ?? 0) > 0) claimed.push(id);
+  }
   return claimed;
 }
