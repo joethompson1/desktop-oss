@@ -17,9 +17,15 @@ import {
   loadMessages,
 } from "$lib/db/conversations";
 import {
+  claimRunsForNotification,
+  listUnnotifiedRuns,
+} from "$lib/db/runs";
+import {
   subscribeToRunCompletions,
   type RunCompletionEvent,
 } from "$lib/db/run-events";
+import { selectSweepNotifications } from "$lib/agent/completion-sweep";
+import type { RunSummary } from "$lib/types/run";
 
 const HISTORY_LIMIT = 100;
 
@@ -51,6 +57,14 @@ const COMPLETION_DEBOUNCE_MS = 500;
 
 export interface OrchestratorChatStore {
   store: ChatStore;
+  /** Reconcile delegate runs that reached a terminal state while this
+   *  session wasn't mounted (user on another page at completion, or an app
+   *  restart), enqueuing ONE batched "[Background delegate update]" for the
+   *  un-notified ones. MUST be called AFTER `store.hydrate()` — it appends a
+   *  system bubble, and hydrate replaces the message list wholesale, so a
+   *  bubble enqueued before hydrate resolves would be wiped. Idempotent and
+   *  safe to await; the persisted flag guards against re-notifying. */
+  notifyBackgroundCompletions: () => Promise<void>;
   /** Unsubscribe from completions and clear the pending-flush timer. The
    *  session page calls this on unmount / when the session id changes. */
   dispose: () => void;
@@ -68,10 +82,14 @@ export function createOrchestratorChatStore(
   // Mutable so draft mode can fill it in on first send; the completion
   // subscription below reads it live.
   let conversationId: string | null = options.conversationId;
-  // Per-session completion accumulator + debounce timer (module-global in
-  // the old singleton — now closed over so two sessions don't share state).
-  let pendingCompletions: RunCompletionEvent[] = [];
+  // Debounce timer coalescing bursts of live completion events into one
+  // sweep (closed over so two sessions don't share it).
   let completionFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  // Serializes sweeps for this store. A sweep's DB claim is a SELECT-then-
+  // UPDATE pair; chaining every sweep after the previous one guarantees two
+  // sweeps (e.g. the post-hydrate reconcile and a live completion arriving at
+  // the same moment) can't interleave and both notify the same run.
+  let sweepChain: Promise<void> = Promise.resolve();
 
   const store: ChatStore = new ChatStore({
     async loadHistory() {
@@ -179,22 +197,57 @@ export function createOrchestratorChatStore(
     },
   });
 
-  function flushPendingCompletions(): void {
-    completionFlushTimer = null;
-    const batch = pendingCompletions;
-    pendingCompletions = [];
-    if (batch.length === 0) return;
-    store.enqueueSystemNotification(formatCompletionNotification(batch));
+  // The single completion-notification path, shared by the post-hydrate
+  // reconcile and the live run-events bus. Reads the conversation's
+  // un-notified runs from the DB (the authoritative source — not a fleeting
+  // event payload), applies the pure terminal/TUI policy, atomically claims
+  // the survivors, and enqueues ONE batched notification for exactly the runs
+  // this call claimed. The persisted `completion_notified` flag is the only
+  // dedupe guard, so remount / replay / two near-simultaneous completions all
+  // resolve to at most one notification per run.
+  async function runSweep(): Promise<void> {
+    if (!conversationId) return; // draft session — no runs yet
+    let candidates: RunSummary[];
+    try {
+      const runs = await listUnnotifiedRuns(conversationId);
+      candidates = selectSweepNotifications(runs);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[chat] completion sweep query failed", err);
+      return;
+    }
+    if (candidates.length === 0) return;
+    let claimed: string[];
+    try {
+      claimed = await claimRunsForNotification(candidates.map((r) => r.id));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[chat] completion claim failed", err);
+      return;
+    }
+    const claimedSet = new Set(claimed);
+    const toNotify = candidates.filter((r) => claimedSet.has(r.id));
+    if (toNotify.length === 0) return;
+    store.enqueueSystemNotification(
+      formatCompletionNotification(toNotify.map(runToCompletionEvent)),
+    );
+  }
+
+  function sweep(): Promise<void> {
+    const next = sweepChain.then(runSweep, runSweep);
+    sweepChain = next.catch(() => {});
+    return next;
   }
 
   const unsubscribe = subscribeToRunCompletions((event) => {
     if (event.conversationId !== conversationId) return;
-    pendingCompletions.push(event);
+    // Coalesce bursts, then sweep the DB rather than trust this event's
+    // payload — same code path (and same dedupe flag) as the hydrate sweep.
     if (completionFlushTimer) clearTimeout(completionFlushTimer);
-    completionFlushTimer = setTimeout(
-      flushPendingCompletions,
-      COMPLETION_DEBOUNCE_MS,
-    );
+    completionFlushTimer = setTimeout(() => {
+      completionFlushTimer = null;
+      void sweep();
+    }, COMPLETION_DEBOUNCE_MS);
   });
 
   function dispose(): void {
@@ -205,7 +258,32 @@ export function createOrchestratorChatStore(
     }
   }
 
-  return { store, dispose };
+  return { store, notifyBackgroundCompletions: sweep, dispose };
+}
+
+/** Resolve a display name for the harness that ran a delegate. Prefers the
+ *  live config's name; falls back to the stored id / type if the config was
+ *  since removed. Used only for the notification's human-readable text. */
+function resolveHarnessName(run: RunSummary): string {
+  if (run.delegateHarnessId) {
+    const cfg = harnesses.configs.find((c) => c.id === run.delegateHarnessId);
+    if (cfg) return cfg.name;
+  }
+  return run.delegateHarnessId ?? run.delegateType ?? "unknown harness";
+}
+
+/** Project a persisted run into the completion-event shape
+ *  `formatCompletionNotification` consumes, so the sweep and the live bus
+ *  render identical notification text. */
+function runToCompletionEvent(run: RunSummary): RunCompletionEvent {
+  return {
+    runId: run.id,
+    name: run.name ?? null,
+    conversationId: run.conversationId,
+    status: run.status,
+    summary: run.summary ?? null,
+    harnessName: resolveHarnessName(run),
+  };
 }
 
 function formatCompletionNotification(batch: RunCompletionEvent[]): string {

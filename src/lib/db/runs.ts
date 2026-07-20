@@ -24,6 +24,7 @@ interface RunRecord {
   surface: string | null;
   workdir: string | null;
   tui_initial_prompt: string | null;
+  completion_notified: number;
   files_changed_json: string | null;
   created_at: number;
   completed_at: number | null;
@@ -242,6 +243,7 @@ function recordToSummary(r: RunRecord): RunSummary {
     surface: (r.surface as RunSurface | null) ?? undefined,
     workdir: r.workdir ?? undefined,
     tuiInitialPrompt: r.tui_initial_prompt ?? undefined,
+    completionNotified: r.completion_notified === 1,
     filesChanged: r.files_changed_json
       ? (JSON.parse(r.files_changed_json) as string[])
       : undefined,
@@ -381,4 +383,58 @@ export async function markStaleRunsAbandoned(): Promise<number> {
     [now],
   );
   return result.rowsAffected ?? 0;
+}
+
+/**
+ * Every run in a conversation the orchestrator has NOT yet been told about
+ * (`completion_notified = 0`), oldest first. Deliberately unfiltered by
+ * status: the caller (the hydrate sweep) applies the terminal-state and
+ * surface policy in a pure, unit-tested predicate (`shouldSweepNotify`) so
+ * that logic isn't duplicated in SQL. Oldest-first so the batched
+ * notification lists completions in the order they happened.
+ */
+export async function listUnnotifiedRuns(
+  conversationId: string,
+): Promise<RunSummary[]> {
+  const db = await getDb();
+  const rows = await db.select<RunRecord[]>(
+    `SELECT * FROM runs
+     WHERE conversation_id = $1 AND completion_notified = 0
+     ORDER BY created_at ASC`,
+    [conversationId],
+  );
+  return rows.map(recordToSummary);
+}
+
+/**
+ * Atomically claim a set of runs for completion notification: flip
+ * `completion_notified` 0 → 1 for the given ids and return the subset this
+ * call actually claimed. Callers notify ONLY the returned ids, so the
+ * persisted flag is the single source of truth for "has the orchestrator
+ * been told?" — the live run-events bus and the hydrate sweep can both call
+ * this without coordinating and never double-notify.
+ *
+ * One conditional UPDATE per id, each checked via rowsAffected: a claim is
+ * then atomic PER RUN at the SQLite level, so exactly-once holds even across
+ * two concurrent claimers for the same conversation (e.g. a store from a
+ * rapid remount racing its predecessor's in-flight sweep) — a window a
+ * SELECT-then-UPDATE pair would leave open. Per-store sweep serialization in
+ * `chat.svelte.ts` remains, but correctness no longer depends on it. The ids
+ * list is small (un-notified completions), so N tiny statements are cheap.
+ */
+export async function claimRunsForNotification(
+  runIds: string[],
+): Promise<string[]> {
+  if (runIds.length === 0) return [];
+  const db = await getDb();
+  const claimed: string[] = [];
+  for (const id of runIds) {
+    const result = await db.execute(
+      `UPDATE runs SET completion_notified = 1
+       WHERE id = $1 AND completion_notified = 0`,
+      [id],
+    );
+    if ((result.rowsAffected ?? 0) > 0) claimed.push(id);
+  }
+  return claimed;
 }
